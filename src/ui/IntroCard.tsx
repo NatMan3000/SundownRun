@@ -205,9 +205,18 @@ export function IntroCard() {
             <b className="hud-key">R</b>
             <em>reset</em>
           </span>
+          <span>
+            <b className="hud-key">SHIFT+R</b>
+            <em>restart</em>
+          </span>
+          <span>
+            <b className="hud-key">ESC</b>
+            <em>menu</em>
+          </span>
         </div>
         <div className="intro__pad">
-          gamepad: left stick &middot; triggers &middot; A handbrake &middot; RB camera &middot; Y reset
+          gamepad: left stick &middot; triggers &middot; A handbrake &middot; RB camera &middot; Y reset &middot; VIEW
+          restart &middot; MENU menu
         </div>
 
         {/* The garage. Divs, not buttons: a native button would also fire on

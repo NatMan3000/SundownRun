@@ -328,6 +328,10 @@ export function HUD() {
             <em>camera</em>
             <b className="hud-key">Y</b>
             <em>reset</em>
+            <b className="hud-key">VIEW</b>
+            <em>restart</em>
+            <b className="hud-key">MENU</b>
+            <em>menu</em>
           </>
         ) : (
           <>
@@ -339,6 +343,10 @@ export function HUD() {
             <em>camera</em>
             <b className="hud-key">R</b>
             <em>reset</em>
+            <b className="hud-key">SHIFT+R</b>
+            <em>restart</em>
+            <b className="hud-key">ESC</b>
+            <em>menu</em>
           </>
         )}
       </div>
