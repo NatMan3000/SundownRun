@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { RapierCollider, RapierRigidBody } from '@react-three/rapier'
+import { CONFIG } from '../core/config'
 import { WORLD_SIZE } from '../core/terrain'
 import { telemetry } from '../core/telemetry'
 import * as audio from '../audio/AudioEngine'
@@ -32,9 +33,8 @@ import { getScatter, treeIsReachable, type TreeInstance } from './scatter'
 // active list.
 // ============================================================
 
-/** Below this the trunk holds. Constitution asks for 35-45 km/h; 40 sits in the middle. */
-const SMASH_KMH = 40
-const SMASH_SPEED = SMASH_KMH / 3.6
+/** Below this the trunk holds. Kid knob: CONFIG.treeSmashKmh (default 40). */
+const SMASH_SPEED = CONFIG.treeSmashKmh / 3.6
 
 // The chassis box, mirrored from vehicle/tuning.ts CHASSIS. Read-only here: the world
 // worker does not own that file, and a wrong number only softens the look-ahead.
@@ -417,5 +417,3 @@ export function smashScale(t: TreeBody): number {
 export function activeSmashed(): readonly TreeBody[] {
   return active
 }
-
-export const SMASH_SPEED_KMH = SMASH_KMH

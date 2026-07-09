@@ -35,30 +35,34 @@ export const ROAD_MAX_FLARE = MAX_FLARE
 //
 // Containment is an ENERGY argument, not a guess. A car at the 190 km/h top speed
 // carries 52.8 m/s, so it can convert at most v^2/2g = 142 m of climb before it
-// stops - and that is the absolute ceiling, ignoring the energy tyres and impacts
-// eat on the way up. The rim is built to beat that number twice over:
+// stops - the absolute ceiling, ignoring everything tyres and impacts eat on the way
+// up. The rim climbs RIM_RISE metres, back-loaded: the first 55% of the ground gains
+// only 30% of the height (rolling foothills you can drive), the last 45% gains 70%
+// (an unclimbable rock face). Reaching the face has already spent a third of the
+// car's budget, so it arrives with far less climb left in it than the face is tall.
 //
-//   - foothills climb 52 m between 620 m and 790 m. Gentle (0.31 average), so they
-//     read as rolling country and are perfectly drivable. Reaching their top has
-//     already spent 52 m of the car's 142 m budget: it arrives at the face doing
-//     42 m/s, with only 90 m of climb left in it.
-//   - the face then climbs 148 m in 76 m of ground (1.95 average, 2.92 at its
-//     steepest = 71 degrees). 90 m of climb cannot beat 148 m of wall. There is no
-//     approach bearing, jump or ramp angle that changes this - it is conservation
-//     of energy, and the margin is 58 m.
+// TWO THINGS THE FIRST VERSION GOT WRONG, both art-direction rather than physics:
 //
-// A player who edits CONFIG.topSpeedKmh past ~260 breaks that arithmetic, which is
-// exactly why world/boundary.ts still hangs a failsafe collider ring at the top of
-// the face. You have to climb 144 m of rock to touch it, so what you see when you
-// stop is a mountainside, never glass.
-export const RIM_FOOT = 620 //  metres from origin: foothills begin (road tops out at 585)
-export const RIM_FACE = 790 //  the unclimbable face begins
-export const RIM_TOP = 866 //   and tops out onto the plateau
-const RIM_FOOTHILL_RISE = 52
-const RIM_FACE_RISE = 148
-
-/** Radius of the failsafe boundary ring. Sits just inside the top of the face. */
-export const BOUNDARY_RADIUS = 858
+//  1. It was a circle. The road's radius swings between ~420 m and 585 m, so a
+//     circular rim loomed right over the corridors where the road runs wide. The rim
+//     now follows the ROAD: every bearing's foot sits RIM_FOOT_GAP metres outside the
+//     outermost road point on that bearing. Where the circuit tucks in, the bowl
+//     opens out. That alone pushed the wall 100 m further back from the north
+//     straight and the east sweeper.
+//
+//  2. It was smooth, which made it read as an embankment - a custard ramp with a
+//     pale rock band on top. The foot and crest radii now carry two octaves of
+//     seamless noise (buttresses and re-entrants), and the face itself carries a
+//     gully field that vanishes at the crest, so the skyline stays clean while the
+//     slopes below break up.
+//
+// The failsafe collider ring (world/boundary.ts) follows the crest, so it is always
+// at the top of a rock face and never in open ground.
+export const RIM_RISE = 135 //     total vertical relief, valley floor -> plateau
+const RIM_FOOT_GAP = 130 //        clear ground between the outermost road point and the first slope
+const RIM_SPAN = 285 //            ground covered by foothills + face
+const RIM_CREST_CAP = 950 //       the heightfield ends at 1000 m; leave a plateau
+const RIM_BEARINGS = 256
 
 // ---------- terrain ----------
 
@@ -72,10 +76,180 @@ function gauss2(dx: number, dz: number, sigma: number): number {
   return Math.exp(-(dx * dx + dz * dz) / (2 * sigma * sigma))
 }
 
+/** Anisotropic gaussian in already-rotated local coords. */
+function gaussUV(u: number, v: number, su: number, sv: number): number {
+  return Math.exp(-((u * u) / (2 * su * su) + (v * v) / (2 * sv * sv)))
+}
+
+// ---------- the playground: off-track landforms for a kid who goes exploring ----------
+//
+// Terrain, not props. They are gaussians summed into baseHeight, so the mesh, the
+// heightfield collider and the vegetation scatter all agree about them for free, and
+// they cost one distance test each. Every one sits >100 m from the racing line and
+// well inside the rim, and none of them is near either of the two hidden sun shards
+// (world/Delights.tsx puts those 24 m and 42 m off the road).
+
+export type PlaygroundKind = 'kicker' | 'double' | 'bowl' | 'table'
+
+export interface Playground {
+  x: number
+  z: number
+  /** direction of travel, radians. Ramps face into it. */
+  heading: number
+  kind: PlaygroundKind
+  /** beyond this the feature contributes nothing - used to gate the maths and the scatter */
+  reach: number
+  what: string
+}
+
+export const PLAYGROUNDS: readonly Playground[] = [
+  {
+    x: -168, z: 44, heading: 2.5, kind: 'kicker', reach: 135,
+    what: 'lone kicker in the middle of the loop - a rise, a lip, and the ground drops away',
+  },
+  {
+    x: 214, z: -170, heading: 0.55, kind: 'double', reach: 175,
+    what: 'the dare-you double: clear the first mound and the second one launches you',
+  },
+  {
+    x: -272, z: -128, heading: 0, kind: 'bowl', reach: 120,
+    what: 'a dished hollow, made for donuts',
+  },
+  {
+    x: 318, z: 8, heading: 3.5, kind: 'table', reach: 150,
+    what: 'a flat-topped table: steep up-ramp, 70 m of nothing, steep landing',
+  },
+]
+
+/** Height these landforms add to the terrain. Zero everywhere outside their reach. */
+function playgroundHeight(x: number, z: number): number {
+  let h = 0
+  for (let i = 0; i < PLAYGROUNDS.length; i++) {
+    const p = PLAYGROUNDS[i]
+    const dx = x - p.x
+    const dz = z - p.z
+    if (dx * dx + dz * dz > p.reach * p.reach) continue
+    const ca = Math.cos(p.heading)
+    const sa = Math.sin(p.heading)
+    const u = dx * ca + dz * sa //  along the direction of travel
+    const v = -dx * sa + dz * ca // across it
+
+    if (p.kind === 'kicker') {
+      // 11 m of rise over 20 m of run, then the ground falls out from under you
+      h += 11 * gaussUV(u, v, 20, 34) - 5.5 * gaussUV(u - 52, v, 30, 40)
+    } else if (p.kind === 'double') {
+      h +=
+        9 * gaussUV(u + 34, v, 17, 30) +
+        13.5 * gaussUV(u - 32, v, 18, 30) -
+        3 * gaussUV(u - 94, v, 34, 40)
+    } else if (p.kind === 'bowl') {
+      const r = Math.hypot(u, v)
+      h += -6.5 * gaussUV(u, v, 30, 30) + 2.4 * Math.exp(-((r - 40) * (r - 40)) / 242)
+    } else {
+      // flat top between two steep ramps
+      h += 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
+    }
+  }
+  return h
+}
+
 /**
- * Terrain before the road cuts into it. A scenic valley: broad rolling hills,
- * a rise under the north-east switchback, a basin under the south straight,
- * and a rim that climbs toward the mountain ring at the world edge.
+ * 0..1 - how worn the ground is. The faces a car actually rides get scraped down to
+ * dirt, which is also the "something is over there" hint you can read from the road.
+ */
+export function playgroundWear(x: number, z: number): number {
+  let w = 0
+  for (let i = 0; i < PLAYGROUNDS.length; i++) {
+    const p = PLAYGROUNDS[i]
+    const dx = x - p.x
+    const dz = z - p.z
+    const d2 = dx * dx + dz * dz
+    if (d2 > p.reach * p.reach) continue
+    const local = Math.abs(playgroundHeightOne(p, dx, dz))
+    const k = Math.min(1, local / 6.0) * (1 - smoothstep01((Math.sqrt(d2) - p.reach * 0.55) / (p.reach * 0.45)))
+    if (k > w) w = k
+  }
+  return w
+}
+
+function playgroundHeightOne(p: Playground, dx: number, dz: number): number {
+  const ca = Math.cos(p.heading)
+  const sa = Math.sin(p.heading)
+  const u = dx * ca + dz * sa
+  const v = -dx * sa + dz * ca
+  if (p.kind === 'kicker') return 11 * gaussUV(u, v, 20, 34) - 5.5 * gaussUV(u - 52, v, 30, 40)
+  if (p.kind === 'double') {
+    return (
+      9 * gaussUV(u + 34, v, 17, 30) +
+      13.5 * gaussUV(u - 32, v, 18, 30) -
+      3 * gaussUV(u - 94, v, 34, 40)
+    )
+  }
+  if (p.kind === 'bowl') {
+    const r = Math.hypot(u, v)
+    return -6.5 * gaussUV(u, v, 30, 30) + 2.4 * Math.exp(-((r - 40) * (r - 40)) / 242)
+  }
+  return 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
+}
+
+// ---------- the rim table: one foot + crest radius per bearing ----------
+
+const rimFoot = new Float32Array(RIM_BEARINGS)
+const rimCrest = new Float32Array(RIM_BEARINGS)
+let RIM_MIN_FOOT = Infinity
+let RIM_MIN_CREST = Infinity
+
+function tableAt(table: Float32Array, theta: number): number {
+  const u = ((theta / (Math.PI * 2)) % 1 + 1) % 1 * RIM_BEARINGS
+  const i0 = Math.floor(u) % RIM_BEARINGS
+  const i1 = (i0 + 1) % RIM_BEARINGS
+  const f = u - Math.floor(u)
+  return table[i0] * (1 - f) + table[i1] * f
+}
+
+/** Back-loaded: 30% of the height over the first 55% of the ground, 70% over the rest. */
+function rimShape(t: number): number {
+  return 0.3 * smoothstep01(t / 0.55) + 0.7 * smoothstep01((t - 0.55) / 0.45)
+}
+
+/** Rim contribution at a point. Also the value the terrain shader hazes and rocks by. */
+export function rimHeightAt(x: number, z: number): number {
+  const rm = Math.hypot(x, z)
+  if (rm < RIM_MIN_FOOT) return 0
+  const th = Math.atan2(z, x)
+  const foot = tableAt(rimFoot, th)
+  const crest = tableAt(rimCrest, th)
+  if (rm >= crest) {
+    // plateau, with just enough roll that its skyline is not a ruled line
+    const roll = (fbm2D(x * 0.0055 + 21.7, z * 0.0055 + 88.1, 2) - 0.5) * 16
+    return RIM_RISE + roll * smoothstep01((rm - crest) / 40)
+  }
+  const t = (rm - foot) / (crest - foot)
+  if (t <= 0) return 0
+
+  // Gullies and buttresses. sin(pi*t) means they die at BOTH the foot and the crest,
+  // so the bowl floor stays flat and the skyline stays a clean ridge - all the relief
+  // lands on the slopes in between, which is the only place it reads.
+  const w = Math.sin(Math.PI * t)
+  const g1 = fbm2D(x * 0.011 + 313.4, z * 0.011 + 47.9, 3) - 0.5
+  const g2 = fbm2D(x * 0.031 + 5.1, z * 0.031 + 91.3, 2) - 0.5
+  return RIM_RISE * rimShape(t) + (g1 * 30 + g2 * 9) * w
+}
+
+/** Radius at which the rim tops out, for a bearing. The failsafe ring follows this. */
+export function rimCrestRadiusAt(theta: number): number {
+  return tableAt(rimCrest, theta)
+}
+
+/** The smallest crest radius anywhere. Anything beyond this is behind the boundary. */
+export function rimMinCrestRadius(): number {
+  return RIM_MIN_CREST
+}
+
+/**
+ * Terrain before the road cuts into it: broad rolling hills, a rise under the
+ * north-east switchback, a basin under the south straight, four playground
+ * landforms, and the rim.
  */
 function baseHeight(x: number, z: number): number {
   const h1 = (fbm2D(x * 0.00155 + 137.2, z * 0.00155 + 71.5, 4) - 0.5) * 62 // ~645 m hills
@@ -83,10 +257,7 @@ function baseHeight(x: number, z: number): number {
   const h3 = (fbm2D(x * 0.021 + 55.3, z * 0.021 + 12.9, 2) - 0.5) * 2.4 //     ~48 m ripples
   const hill = 36 * gauss2(x - 205, z - 235, 330) //   the switchback climbs this
   const basin = -17 * gauss2(x + 70, z + 380, 300) //  the south straight sits in this
-  const rm = Math.hypot(x, z)
-  const foothills = smoothstep01((rm - RIM_FOOT) / (RIM_FACE - RIM_FOOT)) * RIM_FOOTHILL_RISE
-  const face = smoothstep01((rm - RIM_FACE) / (RIM_TOP - RIM_FACE)) * RIM_FACE_RISE
-  return h1 + h2 + h3 + hill + basin + foothills + face
+  return h1 + h2 + h3 + hill + basin + playgroundHeight(x, z) + rimHeightAt(x, z)
 }
 
 /** Terrain before the road exists. Useful for anything that must ignore the road cut. */
@@ -147,6 +318,70 @@ const CIRCUIT: ReadonlyArray<readonly [number, number]> = [
   [-368, -376], //  42  last corner
   [-330, -404], //  43  its exit, already lined up with the straight
 ]
+
+// ---------- build the rim table from the circuit ----------
+//
+// Runs at module load, BEFORE buildRoad() calls baseHeight(). It reads the raw circuit
+// polyline rather than roadSpline, because the spline does not exist yet - and it does
+// not need to: it only wants the road's outermost reach per bearing, to a few metres.
+{
+  const maxR = new Float32Array(RIM_BEARINGS)
+  const CN = CIRCUIT.length
+  // Walk the closed polyline at ~0.5 m and record the furthest road point per bearing.
+  for (let s = 0; s < CN; s++) {
+    const [ax, az] = CIRCUIT[s]
+    const [bx, bz] = CIRCUIT[(s + 1) % CN]
+    const steps = Math.max(2, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5))
+    for (let k = 0; k < steps; k++) {
+      const f = k / steps
+      const x = ax + (bx - ax) * f
+      const z = az + (bz - az) * f
+      const r = Math.hypot(x, z)
+      const b = Math.floor(((Math.atan2(z, x) / (Math.PI * 2)) % 1 + 1) % 1 * RIM_BEARINGS) % RIM_BEARINGS
+      if (r > maxR[b]) maxR[b] = r
+    }
+  }
+  // A rim slope is radial, so a bin only has to clear its own bearing - but take a
+  // small circular max anyway, so an interpolated lookup between two bins can never
+  // dip inside the road.
+  const spread = new Float32Array(RIM_BEARINGS)
+  for (let i = 0; i < RIM_BEARINGS; i++) {
+    let m = 0
+    for (let k = -3; k <= 3; k++) {
+      const v = maxR[(i + k + RIM_BEARINGS) % RIM_BEARINGS]
+      if (v > m) m = v
+    }
+    spread[i] = m
+  }
+  // Smooth it so the bowl opens and closes gently, then re-assert the max: smoothing
+  // a peak downward would let the rim swallow the road it was measured from.
+  const smooth = new Float32Array(spread)
+  smoothCircular(smooth, 9, 2)
+  for (let i = 0; i < RIM_BEARINGS; i++) if (spread[i] > smooth[i]) smooth[i] = spread[i]
+
+  let minFoot = Infinity
+  let minCrest = Infinity
+  for (let i = 0; i < RIM_BEARINGS; i++) {
+    const th = (i / RIM_BEARINGS) * Math.PI * 2
+    const c = Math.cos(th)
+    const s = Math.sin(th)
+    // Seamless around the loop: sample the noise on the unit circle, not on the angle.
+    const n1 = fbm2D(c * 2.4 + 71.3, s * 2.4 + 71.3, 3) - 0.5 //  buttresses and re-entrants
+    const n2 = fbm2D(c * 5.6 + 12.9, s * 5.6 + 12.9, 2) - 0.5 //  finer spurs
+
+    const foot = smooth[i] + RIM_FOOT_GAP + n1 * 80
+    let crest = foot + RIM_SPAN + n2 * 60
+    if (crest > RIM_CREST_CAP) crest = RIM_CREST_CAP
+    if (crest < foot + 140) crest = foot + 140 // never let a bearing become a cliff
+
+    rimFoot[i] = foot
+    rimCrest[i] = crest
+    if (foot < minFoot) minFoot = foot
+    if (crest < minCrest) minCrest = crest
+  }
+  RIM_MIN_FOOT = minFoot
+  RIM_MIN_CREST = minCrest
+}
 
 const PROFILE_N = 1024 // samples used to design the elevation profile
 const DENSE = 4096 //    samples used for nearest-point queries (~0.95 m apart)

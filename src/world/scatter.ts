@@ -1,10 +1,12 @@
 import { mulberry32, fbm2D } from '../core/random'
 import {
-  BOUNDARY_RADIUS,
+  PLAYGROUNDS,
   ROAD_DENSE,
   ROAD_RIBBON_HALF,
-  RIM_FACE,
   getTerrainHeight,
+  playgroundWear,
+  rimHeightAt,
+  rimMinCrestRadius,
   roadDistance,
   roadEdgeDistance,
 } from '../core/terrain'
@@ -64,15 +66,19 @@ const TARGET_A = 780
 const TARGET_B = 620
 const TARGET_C = 230
 const TARGET_ROCKS = 640
+/** Loose stone climbing the rim's lower slopes. Decoration only, no colliders out there. */
+const TARGET_SCREE = 620
 const GRASS_COUNT = 32000
+/** Tufts sown across the four playground landforms so their ramps read as drivable ground. */
+const PLAYGROUND_GRASS = 3600
 
 /**
- * Trees stop at the foot of the cliff. Nothing grows on a 71-degree face, and a tree
- * behind the boundary would be scenery the player can see but never touch - which is
- * exactly the inconsistency constitution s5 forbids. Every tree that exists is inside
- * the bowl, and every one of them gets a collider (see treeSmash.ts).
+ * Trees climb the foothills and give out as the slope steepens - a treeline, not a
+ * fence. A tree behind the boundary would be scenery the player can see but never
+ * touch, which is exactly the inconsistency constitution s5 forbids; the rim's own
+ * height does the culling for us, because nothing grows above 85 m of rim.
  */
-const TREELINE = RIM_FACE - 4
+const TREELINE_RIM_HEIGHT = 85
 
 /**
  * Rocks smaller than this are kerb-height decoration and stay colliderless; anything
@@ -80,8 +86,8 @@ const TREELINE = RIM_FACE - 4
  * rock is sunk 32% of it, so this is roughly a 30 cm stone.
  */
 const ROCK_COLLIDER_MIN_SY = 0.42
-/** Rocks scatter onto the cliff face for texture, but nothing behind the wall collides. */
-const COLLIDER_MAX_RADIUS = BOUNDARY_RADIUS - 6
+/** Scree scatters onto the rock face for texture, but nothing behind the wall collides. */
+const colliderMaxRadius = () => rimMinCrestRadius() - 20
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
@@ -152,9 +158,6 @@ export function getScatter(): Scatter {
     else if (species === 2 && treesC.length < TARGET_C) treesC.push(t)
   }
 
-  const treeDone = () =>
-    treesA.length >= TARGET_A && treesB.length >= TARGET_B && treesC.length >= TARGET_C
-
   // ---------- trees beside the road (about 70%) ----------
   const corridorA = Math.round(TARGET_A * 0.7)
   const corridorB = Math.round(TARGET_B * 0.7)
@@ -166,6 +169,7 @@ export function getScatter(): Scatter {
     const p = corridorPoint(rng, 5, 142, 1.85)
     if (!p) continue
     if (slopeAt(p.x, p.z) > 0.72) continue
+    if (playgroundWear(p.x, p.z) > 0.1) continue // a jump face is not a place for a tree
     if (rng() > 0.35 + 0.65 * groveDensity(p.x, p.z)) continue
 
     const r = rng()
@@ -192,32 +196,42 @@ export function getScatter(): Scatter {
   }
 
   // ---------- background forest ----------
+  // NO target cap here, and that is deliberate. Capping it made the loop stop once the
+  // species quotas filled, and because it scans x ascending, every background tree in
+  // the world ended up on the western half of the map - the eastern foothills came out
+  // completely bare. Density alone decides the count now.
   const STEP = 30
-  for (let gx = -960; gx <= 960 && !treeDone(); gx += STEP) {
-    for (let gz = -960; gz <= 960 && !treeDone(); gz += STEP) {
+  for (let gx = -960; gx <= 960; gx += STEP) {
+    for (let gz = -960; gz <= 960; gz += STEP) {
       const x = gx + (rng() - 0.5) * STEP * 0.95
       const z = gz + (rng() - 0.5) * STEP * 0.95
+      // Never grow a tree the boundary would leave unreachable: it would render but
+      // carry no collider, which is the ghost tree s5 forbids.
+      if (Math.hypot(x, z) > colliderMaxRadius()) continue
       // the corridor pass owns everything within 150 m
       if (roadDistance(x, z, 150) !== Infinity) continue
-      const r = Math.hypot(x, z)
+      // A treeline, not a fence: clusters climb the foothills and thin out as the rim
+      // rises under them, so the lower slopes read as living ground and the rock face
+      // above reads as rock.
       let density = groveDensity(x, z) * 0.8
-      density *= 1 - smoothstep(TREELINE - 130, TREELINE, r) // a treeline at the cliff foot
+      density *= 1 - smoothstep(20, TREELINE_RIM_HEIGHT, rimHeightAt(x, z))
       if (rng() > density) continue
       if (slopeAt(x, z) > 0.8) continue
+      if (playgroundWear(x, z) > 0.08) continue // leave the landforms clear to ride
       const roll = rng()
       const species = roll < 0.44 ? 0 : roll < 0.9 ? 1 : 2
-      pushTree(
-        {
-          x,
-          y: getTerrainHeight(x, z),
-          z,
-          rotY: rng() * Math.PI * 2,
-          scale: 0.75 + rng() * 0.8,
-          tint: rng(),
-          edge: Infinity,
-        },
-        species
-      )
+      const t: TreeInstance = {
+        x,
+        y: getTerrainHeight(x, z),
+        z,
+        rotY: rng() * Math.PI * 2,
+        scale: 0.75 + rng() * 0.8,
+        tint: rng(),
+        edge: Infinity,
+      }
+      if (species === 0) treesA.push(t)
+      else if (species === 1) treesB.push(t)
+      else treesC.push(t)
     }
   }
 
@@ -262,8 +276,62 @@ export function getScatter(): Scatter {
     })
   }
 
+  // ---------- scree on the rim ----------
+  // Loose stone gathering on the rock face and spilling down the gullies. This is what
+  // stops the rim reading as one poured surface: a broken texture that scales with the
+  // slope under it.
+  for (let attempt = 0; attempt < 40000 && rocks.length < TARGET_ROCKS + TARGET_SCREE; attempt++) {
+    const th = rng() * Math.PI * 2
+    const r = 560 + rng() * 400
+    const x = Math.cos(th) * r
+    const z = Math.sin(th) * r
+    const rim = rimHeightAt(x, z)
+    if (rim < 4) continue
+    const sl = slopeAt(x, z)
+    if (rng() > 0.14 + sl * 0.9) continue
+    const s = 0.4 + Math.pow(rng(), 2.4) * 3.4
+    rocks.push({
+      x,
+      y: getTerrainHeight(x, z),
+      z,
+      rotY: rng() * Math.PI * 2,
+      tilt: (rng() - 0.5) * 0.7,
+      sx: s * (0.8 + rng() * 0.5),
+      sy: s * (0.5 + rng() * 0.5),
+      sz: s * (0.8 + rng() * 0.5),
+      shade: rng(),
+      edge: Infinity,
+    })
+  }
+
+  // ---------- a sparse ring of stones around each playground ----------
+  // The "something is over there" hint, readable from the road long before the shape of
+  // the landform itself is.
+  for (const pg of PLAYGROUNDS) {
+    for (let i = 0; i < 16; i++) {
+      const th = rng() * Math.PI * 2
+      const r = pg.reach * (0.45 + rng() * 0.3)
+      const x = pg.x + Math.cos(th) * r
+      const z = pg.z + Math.sin(th) * r
+      if (roadDistance(x, z, 30) !== Infinity) continue
+      const s = 0.6 + Math.pow(rng(), 1.6) * 1.8
+      rocks.push({
+        x,
+        y: getTerrainHeight(x, z),
+        z,
+        rotY: rng() * Math.PI * 2,
+        tilt: (rng() - 0.5) * 0.5,
+        sx: s * (0.8 + rng() * 0.5),
+        sy: s * (0.55 + rng() * 0.45),
+        sz: s * (0.8 + rng() * 0.5),
+        shade: rng(),
+        edge: Infinity,
+      })
+    }
+  }
+
   // ---------- grass ----------
-  const grass = new Float32Array(GRASS_COUNT * 6)
+  const grass = new Float32Array((GRASS_COUNT + PLAYGROUND_GRASS) * 6)
   let grassCount = 0
   for (let attempt = 0; attempt < GRASS_COUNT * 3 && grassCount < GRASS_COUNT; attempt++) {
     // A tight band hugging the verge, plus a wider meadow behind it.
@@ -280,13 +348,38 @@ export function getScatter(): Scatter {
     grassCount++
   }
 
+  // Tufts over the landforms. They thin out where the ground is worn to dirt, which is
+  // what makes a ramp read as a ramp you can ride rather than a lump of geometry.
+  const perPlayground = Math.floor(PLAYGROUND_GRASS / PLAYGROUNDS.length)
+  for (const pg of PLAYGROUNDS) {
+    let placed = 0
+    for (let attempt = 0; attempt < perPlayground * 4 && placed < perPlayground; attempt++) {
+      const th = rng() * Math.PI * 2
+      const r = pg.reach * 0.8 * Math.sqrt(rng())
+      const x = pg.x + Math.cos(th) * r
+      const z = pg.z + Math.sin(th) * r
+      if (roadDistance(x, z, 26) !== Infinity) continue
+      if (rng() < playgroundWear(x, z) * 0.85) continue // bare where the tyres go
+      const o = grassCount * 6
+      grass[o] = x
+      grass[o + 1] = getTerrainHeight(x, z)
+      grass[o + 2] = z
+      grass[o + 3] = rng() * Math.PI
+      grass[o + 4] = 0.55 + rng() * 0.6
+      grass[o + 5] = rng()
+      grassCount++
+      placed++
+    }
+  }
+
   // ---------- rock colliders ----------
   // Consistency rule: if a rock is big enough to look solid, it IS solid - everywhere
   // in the bowl, not just beside the road. Kerb-height pebbles stay decoration.
   const rockColliders: RockCollider[] = []
+  const maxR = colliderMaxRadius()
   for (const r of rocks) {
     if (r.sy < ROCK_COLLIDER_MIN_SY) continue
-    if (Math.hypot(r.x, r.z) > COLLIDER_MAX_RADIUS) continue
+    if (Math.hypot(r.x, r.z) > maxR) continue
     rockColliders.push({
       x: r.x,
       y: r.y - r.sy * 0.32 + Math.min(r.sx, r.sz) * 0.2,
@@ -301,5 +394,5 @@ export function getScatter(): Scatter {
 
 /** Every tree is inside the boundary, so every tree is reachable. Used by treeSmash. */
 export function treeIsReachable(t: TreeInstance): boolean {
-  return Math.hypot(t.x, t.z) <= COLLIDER_MAX_RADIUS
+  return Math.hypot(t.x, t.z) <= colliderMaxRadius()
 }

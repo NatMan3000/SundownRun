@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { valueNoise2D, hash2D, fbm2D } from '../core/random'
-import { getTerrainHeight } from '../core/terrain'
+import { getSunDirection } from './sun'
 
 // ============================================================
 // Procedural geometry. Everything is flat-shaded and low-poly:
@@ -307,40 +307,66 @@ export function makeGrassGeometry(): THREE.BufferGeometry {
 }
 
 // ---------- mountains ----------
+//
+// THE THIRD DEPTH PLANE, and it took three goes to get right.
+//
+// v1 stood on the terrain at r=900-1170. That put them BEHIND the far plane from most
+// of the bowl (the camera only reaches 1200 m), so half the time there were no
+// mountains at all, and where they did survive they were lit by the sun rig and came
+// out as a pale rock wall stacked on top of the rim.
+//
+// They are now a BACKDROP: one ring, locked to the camera in x/z (Mountains.tsx), so
+// they sit at a constant ~1000-1100 m from the eye no matter where the car is. That
+// buys three things at once:
+//
+//   - they can never clip the far plane, and they are visible from everywhere;
+//   - their distance is constant, so the fog rig (near 288, far 1500) always eats
+//     ~62-70% of them. They read as haze, which is the whole brief;
+//   - the rim, which is real geometry at 300-900 m, occludes them by ordinary depth.
+//     Drive toward the wall and the mountains disappear behind it, exactly as they
+//     should.
+//
+// The sun shading is BAKED into the vertex colours from the flat face normal, and the
+// material is unlit. That is deliberate: a lit material at this distance turns every
+// sun-facing slope into pale warm rock, which is precisely the wall the art director
+// rejected. Baking it means the silhouette keeps its shape without ever brightening
+// past the haze it is supposed to be dissolving into.
 
-const MOUNTAIN_BASE = lin('#7B85A8')
-const MOUNTAIN_TOP = lin('#A8AECB')
-const MOUNTAIN_HAZE = lin('#C6C9DB')
+const MOUNTAIN_BASE = lin('#4E587A')
+const MOUNTAIN_TOP = lin('#838AAA')
+/** Where a ridge goes when it dissolves. Pale, and only barely warmer than the peaks. */
+const MOUNTAIN_HAZE = lin('#B9B4C2')
 
 interface Ring {
   radius: number
   wobble: number
-  peakMin: number
-  peakMax: number
+  /** absolute world height of this ring's lowest and highest peaks */
+  topMin: number
+  topMax: number
   haze: number
   seed: number
   spikes: number
 }
 
+// Kept under the far plane with room for the peaks, and kept LOW: from the middle of
+// the bowl the terrain ridge subtends ~9 deg and these top out around 13, so the sky
+// owns everything above them. A magenta debug build proved the first draft filled the
+// entire frame above the ridge, which is exactly the wall the art director rejected.
+// The terrain ridge subtends ~9.4 deg from mid-bowl (135 m at ~820 m). These peaks
+// clear it by 1-3 deg and no more, so they hug the horizon and the sky keeps the rest.
 const RINGS: Ring[] = [
-  { radius: 900, wobble: 70, peakMin: 120, peakMax: 250, haze: 0.0, seed: 11.3, spikes: 4 },
-  { radius: 1030, wobble: 85, peakMin: 170, peakMax: 310, haze: 0.34, seed: 47.9, spikes: 6 },
-  { radius: 1170, wobble: 95, peakMin: 220, peakMax: 380, haze: 0.62, seed: 83.1, spikes: 3 },
+  { radius: 985, wobble: 55, topMin: 148, topMax: 164, haze: 0.22, seed: 11.3, spikes: 4 },
+  { radius: 1035, wobble: 55, topMin: 156, topMax: 174, haze: 0.44, seed: 47.9, spikes: 6 },
+  { radius: 1085, wobble: 45, topMin: 165, topMax: 184, haze: 0.66, seed: 83.1, spikes: 3 },
 ]
 
 const SEG = 224
 const LAYERS = 5
-const SKIRT = 130 // metres buried below the terrain so no ring ever shows a gap at its base
+/** Well below the bowl floor. The rim hides it from inside; nothing else can see it. */
+const BASE_Y = -140
 
-/**
- * A closed lofted ridge per ring, merged into one draw call. Peaks are measured from
- * the rim plateau they stand on (~200 m), so they still tower over the bowl wall.
- * Silhouette is
- * everything here: the top edge carries three octaves of noise plus a few
- * dominant peaks, the faces are flat-shaded facets, and colour pre-mixes toward
- * the haze so the far rings sit behind the near ones even before fog lands.
- */
 export function makeMountainGeometry(): THREE.BufferGeometry {
+  const sun = getSunDirection()
   const tris = RINGS.length * SEG * LAYERS * 2
   const position = new Float32Array(tris * 9)
   const color = new Float32Array(tris * 9)
@@ -356,14 +382,23 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
     o += 3
   }
 
+  // Flat-face lambert, evaluated once at build time. A quad's normal is close enough
+  // to its own outward radial for a silhouette 1 km away.
+  const shadeAt = (th: number): number => {
+    const nx = Math.cos(th)
+    const nz = Math.sin(th)
+    const d = nx * sun.x + nz * sun.z
+    return 0.74 + 0.26 * Math.max(0, d)
+  }
+
   for (const ring of RINGS) {
     const baseCol = mix3(MOUNTAIN_BASE, MOUNTAIN_HAZE, ring.haze)
-    const topCol = mix3(MOUNTAIN_TOP, MOUNTAIN_HAZE, ring.haze * 0.8)
+    const topCol = mix3(MOUNTAIN_TOP, MOUNTAIN_HAZE, ring.haze * 0.85)
 
-    // Precompute the ridge line so adjacent quads share exactly one silhouette.
     const px: number[][] = []
     const py: number[][] = []
     const pz: number[][] = []
+    const shade: number[] = []
     for (let i = 0; i < SEG; i++) {
       const th = (i / SEG) * Math.PI * 2
       const ct = Math.cos(th)
@@ -372,13 +407,8 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
       const n2 = fbm2D(ct * 8.6 + ring.seed * 2, st * 8.6 + ring.seed * 2, 2)
       const spike = Math.pow(Math.max(0, Math.sin(th * ring.spikes + ring.seed)), 6) * 0.45
       const t = Math.min(1, Math.max(0, n1 * 0.8 + n2 * 0.4 - 0.12 + spike))
-      const peak = ring.peakMin + (ring.peakMax - ring.peakMin) * t
+      const top = ring.topMin + (ring.topMax - ring.topMin) * t
       const R = ring.radius + (n2 - 0.5) * ring.wobble
-
-      // anchor to the terrain, clamping the sample inside the world so the outer
-      // rings do not read the void beyond the terrain mesh
-      const clamp = Math.min(1, 980 / R)
-      const baseY = getTerrainHeight(ct * R * clamp, st * R * clamp) - SKIRT
 
       const cx: number[] = []
       const cy: number[] = []
@@ -386,23 +416,27 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
       for (let l = 0; l <= LAYERS; l++) {
         const f = l / LAYERS
         const jitter = (hash2D(i * 1.7 + ring.seed, l * 3.1) - 0.5) * 15 * (1 - f * 0.55)
-        const rr = R * (1 - 0.14 * f * f) + jitter
+        const rr = R * (1 - 0.1 * f * f) + jitter
         cx.push(Math.cos(th) * rr)
-        cy.push(baseY + (peak + SKIRT) * Math.pow(f, 0.85))
+        cy.push(BASE_Y + (top - BASE_Y) * Math.pow(f, 0.85))
         cz.push(Math.sin(th) * rr)
       }
       px.push(cx)
       py.push(cy)
       pz.push(cz)
+      shade.push(shadeAt(th))
     }
 
     for (let i = 0; i < SEG; i++) {
       const j = (i + 1) % SEG
+      const sh = (shade[i] + shade[j]) * 0.5
       for (let l = 0; l < LAYERS; l++) {
         const f0 = l / LAYERS
         const f1 = (l + 1) / LAYERS
-        const c0 = mix3(baseCol, topCol, f0)
-        const c1 = mix3(baseCol, topCol, f1)
+        const a = mix3(baseCol, topCol, f0)
+        const b = mix3(baseCol, topCol, f1)
+        const c0: [number, number, number] = [a[0] * sh, a[1] * sh, a[2] * sh]
+        const c1: [number, number, number] = [b[0] * sh, b[1] * sh, b[2] * sh]
         push(px[i][l], py[i][l], pz[i][l], c0)
         push(px[j][l], py[j][l], pz[j][l], c0)
         push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], c1)
