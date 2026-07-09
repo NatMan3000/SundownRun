@@ -27,6 +27,11 @@
 //  Deterministic - no Math.random, no wall-clock branching.
 //  When the 30s window closes it writes window.__perf and KEEPS
 //  DRIVING, so a checker can screenshot a moving car afterwards.
+//
+//  ?demo=1&cut=1 additionally drives ONE deliberate course cut, 40s in
+//  (i.e. after the perf window, which it therefore cannot contaminate).
+//  It exists to exercise the lap anti-cheat on the real input path: that
+//  lap must still COUNT, must be flagged DIRTY, and must never set a best.
 // ============================================================
 
 import { useEffect, useRef } from 'react'
@@ -48,10 +53,34 @@ const LOOKAHEAD_BASE = 9
 const LOOKAHEAD_SPEED = 0.42
 const RESYNC_S = 1 / 6
 
+// ---------- ?cut=1 : a scripted, deliberate course cut ----------
+// Drags the autopilot's aim point sideways off the centre line for a while, so it
+// runs wide onto the grass and rejoins. It never skips a sector - the car's nearest-t
+// still sweeps every checkpoint - it just spends far more than the 3s off-road grace.
+// Exists so the anti-cheat can be exercised on the REAL input path: this is the lap
+// that must count, must be dirty, and must never set a best.
+// Starts after the 30s perf window so it can never contaminate a perf measurement.
+//
+// 6.8 m is chosen, not guessed. `onRoad` is false past 5.1 m from the centre line
+// (ROAD_WIDTH/2 + 0.6), and world/scatter.ts puts the nearest tree trunks at ~8.25 m.
+// So this is the whole width of the drivable verge: reliably off-road, reliably not
+// in the trees. Anything wider wedges the car against a trunk and the lap never ends.
+const CUT_START_S = 40
+const CUT_SECONDS = 12
+const CUT_OFFSET_M = 6.8
+const CUT_TARGET_KMH = 58
+
+// Generic unstick. If the autopilot buries the car (a rock, a trunk, a ditch) it has
+// no hands to reverse out with, and the run is dead. Back up, then carry on.
+const STUCK_SPEED = 1.1 //  m/s
+const STUCK_TRIGGER_MS = 1500
+const UNSTICK_MS = 1200
+
 const _target = new THREE.Vector3()
 const _fwd = new THREE.Vector3()
 const _tan1 = new THREE.Vector3()
 const _tan2 = new THREE.Vector3()
+const _tanCut = new THREE.Vector3()
 
 const costs = new Float64Array(MAX_FRAMES)
 const deltas = new Float64Array(MAX_FRAMES)
@@ -74,13 +103,14 @@ function wrapPi(a: number): number {
   return a
 }
 
-function isDemo(): boolean {
-  if (typeof window === 'undefined') return false
-  return new URLSearchParams(window.location.search).get('demo') === '1'
+function param(name: string): string | null {
+  if (typeof window === 'undefined') return null
+  return new URLSearchParams(window.location.search).get(name)
 }
 
 export function DemoDrive() {
-  const active = useRef(isDemo()).current
+  const active = useRef(param('demo') === '1').current
+  const cutting = useRef(param('cut') === '1').current
   const s = useRef({
     elapsed: 0,
     t: 0,
@@ -88,6 +118,8 @@ export function DemoDrive() {
     prevErr: 0,
     n: 0,
     finished: false,
+    stuckMs: 0,
+    unstickMs: 0,
   }).current
 
   useEffect(() => {
@@ -133,6 +165,22 @@ export function DemoDrive() {
     const pos = telemetry.carPosition
     const speed = Math.hypot(telemetry.carVelocity.x, telemetry.carVelocity.z)
 
+    // ---------- unstick: reverse out of whatever we buried ourselves in ----------
+    if (speed < STUCK_SPEED) s.stuckMs += dt * 1000
+    else s.stuckMs = 0
+    if (s.stuckMs > STUCK_TRIGGER_MS) {
+      s.unstickMs = UNSTICK_MS
+      s.stuckMs = 0
+    }
+    if (s.unstickMs > 0) {
+      s.unstickMs -= dt * 1000
+      inputOverride.throttle = 0
+      inputOverride.brake = 1 // at a standstill the brake IS reverse
+      inputOverride.steer = -inputOverride.steer
+      inputOverride.handbrake = false
+      return
+    }
+
     s.resync -= dt
     if (s.resync <= 0) {
       s.resync = RESYNC_S
@@ -143,7 +191,19 @@ export function DemoDrive() {
 
     // ---------- steer at a look-ahead point ----------
     const la = LOOKAHEAD_BASE + speed * LOOKAHEAD_SPEED
-    roadSpline.getPointAt((s.t + la / ROAD_LENGTH) % 1, _target)
+    const laT = (s.t + la / ROAD_LENGTH) % 1
+    roadSpline.getPointAt(laT, _target)
+
+    // ?cut=1 - drag the aim point off the centre line and go bush for a while.
+    const inCut = cutting && s.elapsed > CUT_START_S && s.elapsed < CUT_START_S + CUT_SECONDS
+    if (inCut) {
+      roadSpline.getTangentAt(laT, _tanCut)
+      const lx = -_tanCut.z
+      const lz = _tanCut.x
+      const len = Math.hypot(lx, lz) || 1
+      _target.x += (lx / len) * CUT_OFFSET_M
+      _target.z += (lz / len) * CUT_OFFSET_M
+    }
 
     _fwd.set(0, 0, 1).applyQuaternion(telemetry.carQuaternion)
     const heading = Math.atan2(_fwd.x, _fwd.z)
@@ -159,7 +219,8 @@ export function DemoDrive() {
     roadSpline.getTangentAt(s.t, _tan1)
     roadSpline.getTangentAt((s.t + 0.02) % 1, _tan2)
     const curvature = Math.acos(clamp(_tan1.dot(_tan2), -1, 1))
-    const targetKmh = clamp(102 - 260 * curvature, 58, 102)
+    // Ease off through the cut - the grass is rough and there are rocks in it.
+    const targetKmh = inCut ? CUT_TARGET_KMH : clamp(102 - 260 * curvature, 58, 102)
     const targetV = targetKmh / 3.6
 
     inputOverride.throttle = speed < 1 ? 1 : clamp((targetV - speed) * 0.3, 0, 1)

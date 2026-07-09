@@ -1,8 +1,10 @@
 // Dev-only verification affordances (checkers depend on these):
-//  - window.__game: telemetry, renderInfo(), carVisual, terrainHeight(),
-//    live lap state (lapCount / lastLapMs / bestLapMs) and the live camera fov.
-//    The lap and fov members are GETTERS - read them at the moment you need them,
-//    do not snapshot the object and expect it to keep updating.
+//  - window.__game: telemetry, renderInfo(), carVisual, terrainHeight(), the live
+//    camera fov, live lap state (lapCount / lastLapMs / bestLapMs / lastLapDirty)
+//    and the lap-validity surface (sectorsPassed / sectorMask / offRoadMsThisLap /
+//    currentLapDirty / lapVoidNonce / lapElapsedMs / lapArmed).
+//    All of those are GETTERS - read them at the moment you need them, do not
+//    snapshot the object and expect it to keep updating.
 //  - ?demo=1: scripted autopilot lap segment (DemoDrive.tsx) recording frame
 //    times into window.__perf: { running, done, frames, avgMs, p99Ms, fps }
 //  - CONFIG.showFps: on-screen fps meter (plain DOM, rAF, no React state)
@@ -14,6 +16,7 @@ import { telemetry } from '../core/telemetry'
 import { getTerrainHeight } from '../core/terrain'
 import { useGameStore } from '../core/store'
 import { carVisual } from '../vehicle/carVisual'
+import { lapState } from '../vehicle/lapTracker'
 import { DemoDrive } from './DemoDrive'
 
 declare global {
@@ -28,6 +31,25 @@ declare global {
       readonly lapCount: number
       readonly lastLapMs: number | null
       readonly bestLapMs: number | null
+      /** True when the LAST completed lap was dirty (it can never have set a best). */
+      readonly lastLapDirty: boolean
+      /** True when the lap IN PROGRESS has spent its off-road grace. */
+      readonly currentLapDirty: boolean
+      /** Bumped each time a line crossing is rejected for skipped sectors. */
+      readonly lapVoidNonce: number
+      /** Latest sampled spline parameter, 0..1. The start line is t = 0. */
+      readonly splineT: number
+      /** Ordered checkpoints (t = k/8) behind the car on the current lap, 0..8. */
+      readonly sectorsPassed: number
+      readonly sectorCount: number
+      /** Bitfield of passed checkpoints - bit k is the checkpoint at t = k/8. */
+      readonly sectorMask: number
+      /** Cumulative off-road milliseconds accrued on the current lap. */
+      readonly offRoadMsThisLap: number
+      /** Milliseconds since the lap in progress started. 0 while unarmed. */
+      readonly lapElapsedMs: number
+      /** False between a reset and the next line crossing - nothing is being timed. */
+      readonly lapArmed: boolean
       /** Live vertical FOV of the chase camera, degrees. */
       readonly fov: number
     }
@@ -115,6 +137,36 @@ export function DevTools() {
       },
       get bestLapMs() {
         return useGameStore.getState().bestLapMs
+      },
+      get lastLapDirty() {
+        return useGameStore.getState().lastLapDirty
+      },
+      get currentLapDirty() {
+        return useGameStore.getState().currentLapDirty
+      },
+      get lapVoidNonce() {
+        return useGameStore.getState().lapVoidNonce
+      },
+      get splineT() {
+        return lapState.splineT
+      },
+      get sectorsPassed() {
+        return lapState.sectorsPassed
+      },
+      get sectorCount() {
+        return lapState.sectorCount
+      },
+      get sectorMask() {
+        return lapState.sectorMask
+      },
+      get offRoadMsThisLap() {
+        return lapState.offRoadMsThisLap
+      },
+      get lapElapsedMs() {
+        return lapState.lapElapsedMs
+      },
+      get lapArmed() {
+        return lapState.armed
       },
       get fov() {
         return (camera as THREE.PerspectiveCamera).fov

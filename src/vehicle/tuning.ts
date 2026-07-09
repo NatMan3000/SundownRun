@@ -265,8 +265,30 @@ export const CAMERA = {
 export const LAP = {
   /** Crossing t=0 forwards counts, but only after this long on the current lap. */
   minLapMs: 5000,
-  /** How close to the ends of the spline the crossing test looks. */
-  crossBand: 0.15,
   /** Timing starts on first movement. */
   startKmh: 2,
+
+  /**
+   *  ANTI-CHEAT. Eight invisible checkpoints at spline t = k/8, in order.
+   *  A lap only completes if all eight were passed since the last line crossing,
+   *  which is what stops a tiny circle over the start line from ticking laps.
+   */
+  sectors: 8,
+  /**
+   *  Largest forward jump in spline t between two 12Hz samples that still counts
+   *  as continuous travel. At 190 km/h a real sample advances t by 0.0011, so
+   *  0.06 (~230 m of spline) is enormous slack - enough for any corner cut across
+   *  the grass, where `nearestRoadPoint` legitimately skips ahead. Anything larger
+   *  is a teleport or a genuinely skipped section, and earns no checkpoints.
+   */
+  maxSectorJump: 0.06,
+  /**
+   *  Cumulative off-road milliseconds before the lap is flagged dirty. Dirty laps
+   *  still count and still show their time - they just can never set a best.
+   *  3s is the grace: a jump landing or a wide exit costs a few hundred ms, so
+   *  only a deliberate course cut spends it.
+   */
+  dirtyGraceMs: 3000,
+  /** Clamp on the dt fed to the off-road accumulator, so a hidden tab cannot dirty a lap. */
+  maxSampleMs: 250,
 }

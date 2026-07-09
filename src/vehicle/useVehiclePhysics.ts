@@ -606,7 +606,9 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       const rp = nearestRoadPoint(_pos.x, _pos.z)
       const d = Math.hypot(_pos.x - rp.point.x, _pos.z - rp.point.z)
       telemetry.onRoad = d <= ROAD_WIDTH / 2 + 0.6
-      lap.update(rp.t, speedKmh, performance.now())
+      // Same query feeds lap validity: sector checkpoints off `rp.t`, dirty
+      // accounting off `onRoad`. Costs nothing beyond what onRoad already paid.
+      lap.update(rp.t, speedKmh, performance.now(), telemetry.onRoad)
     }
 
     // ----- auto reset: fell off the world, or landed on the roof -----
