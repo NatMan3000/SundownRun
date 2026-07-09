@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+
+# Kai session artifacts - not part of the game
+scratchpad/
+sessions/
