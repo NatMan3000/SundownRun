@@ -1,14 +1,31 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { useFrame } from '@react-three/fiber'
 import { makeTreeGeometry, type TreeSpecies } from './geometry'
 import { getScatter, type TreeInstance } from './scatter'
+import { advanceTreeSmash, activeSmashed, smashScale } from './treeSmash'
 import { windUniforms } from './wind'
 
 // ============================================================
 // One InstancedMesh per species (constitution, section 2). Sway and
 // the draw-distance collapse both live in the vertex shader, driven
 // by uniforms - nothing here touches a matrix after mount.
+//
+// The exception is a tree the car has just smashed: treeSmash.ts owns its
+// flight, and we rewrite only THOSE instance matrices, only on the frames
+// they move. A standing forest costs nothing per frame.
 // ============================================================
+
+const SPECIES_ID: Record<TreeSpecies, 0 | 1 | 2> = { broadleaf: 0, slim: 1, autumn: 2 }
+
+// Module-level temps: the smash animation must not allocate per frame.
+const _pos = new THREE.Vector3()
+const _scl = new THREE.Vector3()
+const _axis = new THREE.Vector3()
+const _spin = new THREE.Quaternion()
+const _yaw = new THREE.Quaternion()
+const _mat = new THREE.Matrix4()
+const _up = new THREE.Vector3(0, 1, 0)
 
 const SWAY_VERTEX_HEAD = /* glsl */ `
 #include <common>
@@ -52,6 +69,30 @@ function Species({ species, list }: { species: TreeSpecies; list: TreeInstance[]
   const ref = useRef<THREE.InstancedMesh>(null!)
   const geometry = useMemo(() => makeTreeGeometry(species), [species])
   const material = useMemo(makeFoliageMaterial, [])
+  const id = SPECIES_ID[species]
+
+  useFrame((state) => {
+    // advanceTreeSmash is idempotent per frame: whichever species runs first does the
+    // integration, the other two just read the result.
+    if (!advanceTreeSmash(state.clock.elapsedTime, id)) return
+    const mesh = ref.current
+    if (!mesh) return
+    const smashed = activeSmashed()
+    for (let i = 0; i < smashed.length; i++) {
+      const t = smashed[i]
+      if (t.species !== id) continue
+      _axis.set(t.axisX, 0, t.axisZ)
+      if (_axis.lengthSq() < 1e-8) _axis.set(1, 0, 0)
+      _spin.setFromAxisAngle(_axis.normalize(), t.angle)
+      _yaw.setFromAxisAngle(_up, t.rotY)
+      _spin.multiply(_yaw)
+      _pos.set(t.px, t.py, t.pz)
+      _scl.setScalar(smashScale(t))
+      _mat.compose(_pos, _spin, _scl)
+      mesh.setMatrixAt(t.index, _mat)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  })
 
   useLayoutEffect(() => {
     const mesh = ref.current

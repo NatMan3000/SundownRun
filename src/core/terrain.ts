@@ -31,6 +31,35 @@ export const ROAD_RIBBON_HALF = RIBBON_HALF
 /** Largest extra half-width the ribbon flares to in a hairpin. */
 export const ROAD_MAX_FLARE = MAX_FLARE
 
+// ---------- the bowl that contains the player (constitution, section 5) ----------
+//
+// Containment is an ENERGY argument, not a guess. A car at the 190 km/h top speed
+// carries 52.8 m/s, so it can convert at most v^2/2g = 142 m of climb before it
+// stops - and that is the absolute ceiling, ignoring the energy tyres and impacts
+// eat on the way up. The rim is built to beat that number twice over:
+//
+//   - foothills climb 52 m between 620 m and 790 m. Gentle (0.31 average), so they
+//     read as rolling country and are perfectly drivable. Reaching their top has
+//     already spent 52 m of the car's 142 m budget: it arrives at the face doing
+//     42 m/s, with only 90 m of climb left in it.
+//   - the face then climbs 148 m in 76 m of ground (1.95 average, 2.92 at its
+//     steepest = 71 degrees). 90 m of climb cannot beat 148 m of wall. There is no
+//     approach bearing, jump or ramp angle that changes this - it is conservation
+//     of energy, and the margin is 58 m.
+//
+// A player who edits CONFIG.topSpeedKmh past ~260 breaks that arithmetic, which is
+// exactly why world/boundary.ts still hangs a failsafe collider ring at the top of
+// the face. You have to climb 144 m of rock to touch it, so what you see when you
+// stop is a mountainside, never glass.
+export const RIM_FOOT = 620 //  metres from origin: foothills begin (road tops out at 585)
+export const RIM_FACE = 790 //  the unclimbable face begins
+export const RIM_TOP = 866 //   and tops out onto the plateau
+const RIM_FOOTHILL_RISE = 52
+const RIM_FACE_RISE = 148
+
+/** Radius of the failsafe boundary ring. Sits just inside the top of the face. */
+export const BOUNDARY_RADIUS = 858
+
 // ---------- terrain ----------
 
 function smoothstep01(t: number): number {
@@ -54,9 +83,10 @@ function baseHeight(x: number, z: number): number {
   const h3 = (fbm2D(x * 0.021 + 55.3, z * 0.021 + 12.9, 2) - 0.5) * 2.4 //     ~48 m ripples
   const hill = 36 * gauss2(x - 205, z - 235, 330) //   the switchback climbs this
   const basin = -17 * gauss2(x + 70, z + 380, 300) //  the south straight sits in this
-  const r = Math.hypot(x, z) / 1000
-  const rim = smoothstep01((r - 0.66) / 0.52) * 138 // foothills rising into the mountains
-  return h1 + h2 + h3 + hill + basin + rim
+  const rm = Math.hypot(x, z)
+  const foothills = smoothstep01((rm - RIM_FOOT) / (RIM_FACE - RIM_FOOT)) * RIM_FOOTHILL_RISE
+  const face = smoothstep01((rm - RIM_FACE) / (RIM_TOP - RIM_FACE)) * RIM_FACE_RISE
+  return h1 + h2 + h3 + hill + basin + foothills + face
 }
 
 /** Terrain before the road exists. Useful for anything that must ignore the road cut. */

@@ -323,9 +323,9 @@ interface Ring {
 }
 
 const RINGS: Ring[] = [
-  { radius: 900, wobble: 70, peakMin: 85, peakMax: 195, haze: 0.0, seed: 11.3, spikes: 4 },
-  { radius: 1030, wobble: 85, peakMin: 130, peakMax: 265, haze: 0.34, seed: 47.9, spikes: 6 },
-  { radius: 1170, wobble: 95, peakMin: 175, peakMax: 330, haze: 0.62, seed: 83.1, spikes: 3 },
+  { radius: 900, wobble: 70, peakMin: 120, peakMax: 250, haze: 0.0, seed: 11.3, spikes: 4 },
+  { radius: 1030, wobble: 85, peakMin: 170, peakMax: 310, haze: 0.34, seed: 47.9, spikes: 6 },
+  { radius: 1170, wobble: 95, peakMin: 220, peakMax: 380, haze: 0.62, seed: 83.1, spikes: 3 },
 ]
 
 const SEG = 224
@@ -333,7 +333,9 @@ const LAYERS = 5
 const SKIRT = 130 // metres buried below the terrain so no ring ever shows a gap at its base
 
 /**
- * A closed lofted ridge per ring, merged into one draw call. Silhouette is
+ * A closed lofted ridge per ring, merged into one draw call. Peaks are measured from
+ * the rim plateau they stand on (~200 m), so they still tower over the bowl wall.
+ * Silhouette is
  * everything here: the top edge carries three octaves of noise plus a few
  * dominant peaks, the faces are flat-shaded facets, and colour pre-mixes toward
  * the haze so the far rings sit behind the near ones even before fog lands.

@@ -61,6 +61,18 @@ export function getRapierHeights(): number[] {
   return out
 }
 
+let minHeight: number | null = null
+
+/** Lowest point anywhere on the terrain. The catch floor hangs below this. */
+export function lowestTerrain(): number {
+  if (minHeight !== null) return minHeight
+  const h = getHeightLattice()
+  let lo = Infinity
+  for (let i = 0; i < h.length; i++) if (h[i] < lo) lo = h[i]
+  minHeight = lo
+  return lo
+}
+
 /** Analytic surface normal from the lattice, cheaper and smoother than face averaging. */
 export function latticeNormal(ix: number, iz: number, out: [number, number, number]): void {
   const h = getHeightLattice()

@@ -1,7 +1,9 @@
 import { mulberry32, fbm2D } from '../core/random'
 import {
+  BOUNDARY_RADIUS,
   ROAD_DENSE,
   ROAD_RIBBON_HALF,
+  RIM_FACE,
   getTerrainHeight,
   roadDistance,
   roadEdgeDistance,
@@ -41,9 +43,12 @@ export interface RockInstance {
   edge: number
 }
 
-export type Obstacle =
-  | { kind: 'tree'; x: number; y: number; z: number; h: number; r: number }
-  | { kind: 'rock'; x: number; y: number; z: number; r: number }
+export interface RockCollider {
+  x: number
+  y: number
+  z: number
+  r: number
+}
 
 export interface Scatter {
   treesA: TreeInstance[] // broadleaf, deep olive - the common one
@@ -52,7 +57,7 @@ export interface Scatter {
   rocks: RockInstance[]
   grass: Float32Array // [x, y, z, rotY, scale, tint] per tuft
   grassCount: number
-  obstacles: Obstacle[]
+  rockColliders: RockCollider[]
 }
 
 const TARGET_A = 780
@@ -61,10 +66,22 @@ const TARGET_C = 230
 const TARGET_ROCKS = 640
 const GRASS_COUNT = 32000
 
-// Only large things close enough to hit get a collider (constitution, section 2).
-const OBSTACLE_RANGE = 25
-const MAX_TREE_COLLIDERS = 130
-const MAX_ROCK_COLLIDERS = 55
+/**
+ * Trees stop at the foot of the cliff. Nothing grows on a 71-degree face, and a tree
+ * behind the boundary would be scenery the player can see but never touch - which is
+ * exactly the inconsistency constitution s5 forbids. Every tree that exists is inside
+ * the bowl, and every one of them gets a collider (see treeSmash.ts).
+ */
+const TREELINE = RIM_FACE - 4
+
+/**
+ * Rocks smaller than this are kerb-height decoration and stay colliderless; anything
+ * you could actually trip the car on gets a ball. `sy` is the vertical radius, and a
+ * rock is sunk 32% of it, so this is roughly a 30 cm stone.
+ */
+const ROCK_COLLIDER_MIN_SY = 0.42
+/** Rocks scatter onto the cliff face for texture, but nothing behind the wall collides. */
+const COLLIDER_MAX_RADIUS = BOUNDARY_RADIUS - 6
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
@@ -184,7 +201,7 @@ export function getScatter(): Scatter {
       if (roadDistance(x, z, 150) !== Infinity) continue
       const r = Math.hypot(x, z)
       let density = groveDensity(x, z) * 0.8
-      density *= 1 - smoothstep(760, 980, r) // thin out into the mountain haze
+      density *= 1 - smoothstep(TREELINE - 130, TREELINE, r) // a treeline at the cliff foot
       if (rng() > density) continue
       if (slopeAt(x, z) > 0.8) continue
       const roll = rng()
@@ -263,23 +280,26 @@ export function getScatter(): Scatter {
     grassCount++
   }
 
-  // ---------- colliders for the big stuff near the road ----------
-  const obstacles: Obstacle[] = []
-  const nearTrees = treesA
-    .concat(treesB, treesC)
-    .filter((t) => t.edge < OBSTACLE_RANGE && t.scale > 0.85)
-  const treeStride = Math.max(1, Math.ceil(nearTrees.length / MAX_TREE_COLLIDERS))
-  for (let i = 0; i < nearTrees.length; i += treeStride) {
-    const t = nearTrees[i]
-    obstacles.push({ kind: 'tree', x: t.x, y: t.y, z: t.z, h: 4.2 * t.scale, r: 0.42 * t.scale })
-  }
-  const nearRocks = rocks.filter((r) => r.edge < OBSTACLE_RANGE && r.sy > 0.75)
-  const rockStride = Math.max(1, Math.ceil(nearRocks.length / MAX_ROCK_COLLIDERS))
-  for (let i = 0; i < nearRocks.length; i += rockStride) {
-    const r = nearRocks[i]
-    obstacles.push({ kind: 'rock', x: r.x, y: r.y, z: r.z, r: Math.min(r.sx, r.sz) * 0.85 })
+  // ---------- rock colliders ----------
+  // Consistency rule: if a rock is big enough to look solid, it IS solid - everywhere
+  // in the bowl, not just beside the road. Kerb-height pebbles stay decoration.
+  const rockColliders: RockCollider[] = []
+  for (const r of rocks) {
+    if (r.sy < ROCK_COLLIDER_MIN_SY) continue
+    if (Math.hypot(r.x, r.z) > COLLIDER_MAX_RADIUS) continue
+    rockColliders.push({
+      x: r.x,
+      y: r.y - r.sy * 0.32 + Math.min(r.sx, r.sz) * 0.2,
+      z: r.z,
+      r: Math.min(r.sx, r.sz) * 0.85,
+    })
   }
 
-  cache = { treesA, treesB, treesC, rocks, grass, grassCount, obstacles }
+  cache = { treesA, treesB, treesC, rocks, grass, grassCount, rockColliders }
   return cache
+}
+
+/** Every tree is inside the boundary, so every tree is reachable. Used by treeSmash. */
+export function treeIsReachable(t: TreeInstance): boolean {
+  return Math.hypot(t.x, t.z) <= COLLIDER_MAX_RADIUS
 }

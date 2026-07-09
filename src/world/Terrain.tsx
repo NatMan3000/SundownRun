@@ -22,6 +22,8 @@ const GOLD = new THREE.Color('#C9A85C')
 const OLIVE = new THREE.Color('#7A8B4F')
 const SHADE = new THREE.Color('#5C6B3E')
 const DUST = new THREE.Color('#8A7A5E')
+/** Nothing grows on the rim face. `slope` is 1 - normal.y, so 0.67 is the 71-degree wall. */
+const ROCK = new THREE.Color('#7A6E5E')
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
@@ -66,6 +68,9 @@ function buildGeometry(): THREE.BufferGeometry {
 
       col.copy(GOLD).lerp(OLIVE, t)
       col.lerp(SHADE, smoothstep(0.5, 0.95, slope) * 0.65)
+      // The bowl's wall is bare rock. Rolling hills top out near 0.05, road embankments
+      // near 0.02, so nothing but the rim face ever reaches this ramp.
+      col.lerp(ROCK, smoothstep(0.42, 0.7, slope))
 
       // a dusty verge, not a 25 m dirt shoulder: gone by 16 m, and never full strength
       const d = roadDistance(x, z, 18)

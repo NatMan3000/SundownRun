@@ -6,6 +6,7 @@ import { Road } from './Road'
 import { Grass } from './Grass'
 import { Trees } from './Trees'
 import { Rocks } from './Rocks'
+import { StartLine } from './StartLine'
 import { Colliders } from './Colliders'
 import { windUniforms } from './wind'
 
@@ -18,8 +19,12 @@ import { windUniforms } from './wind'
 // straight with a second, sharper crest, and a long downhill left
 // sweeper all the way home.
 //
-// Draw calls: sky 1, mountains 1, terrain 1, road 1, grass 1,
-// trees 3, rocks 1 = 9, plus 4 shadow-caster passes.
+// The bowl is sealed: the rim climbs 200 m at up to 71 degrees, which is more
+// climb than a 190 km/h car has energy for, and a buried collider ring backs it
+// up (core/terrain.ts, world/boundary.ts).
+//
+// Draw calls: sky 1, mountains 1, terrain 1, road 1, start line 2, grass 1,
+// trees 3, rocks 1 = 11, plus 5 shadow-caster passes.
 // ============================================================
 
 export function World() {
@@ -34,6 +39,7 @@ export function World() {
       <Mountains />
       <Terrain />
       <Road />
+      <StartLine />
       <Grass />
       <Trees />
       <Rocks />
