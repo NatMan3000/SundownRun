@@ -1,26 +1,43 @@
-// STUB - world worker replaces this file.
-// Contract: renders terrain + road + vegetation + sky + mountains, and mounts
-// the static physics colliders for the terrain / road corridor.
-import { useMemo } from 'react'
-import * as THREE from 'three'
-import { WORLD_SIZE, getTerrainHeight } from '../core/terrain'
+import { useFrame } from '@react-three/fiber'
+import { SkyDome } from './SkyDome'
+import { Mountains } from './Mountains'
+import { Terrain } from './Terrain'
+import { Road } from './Road'
+import { Grass } from './Grass'
+import { Trees } from './Trees'
+import { Rocks } from './Rocks'
+import { Colliders } from './Colliders'
+import { windUniforms } from './wind'
+
+// ============================================================
+// Sundown Run - the world.
+//
+// A 3.87 km closed circuit through a golden valley: a 600 m south
+// straight with a crest that throws the car above 144 km/h, a flat-out
+// east sweeper climbing to a 30 m hairpin switchback, then a north
+// straight with a second, sharper crest, and a long downhill left
+// sweeper all the way home.
+//
+// Draw calls: sky 1, mountains 1, terrain 1, road 1, grass 1,
+// trees 3, rocks 1 = 9, plus 4 shadow-caster passes.
+// ============================================================
 
 export function World() {
-  const geometry = useMemo(() => {
-    const res = 128
-    const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, res, res)
-    geo.rotateX(-Math.PI / 2)
-    const pos = geo.attributes.position
-    for (let i = 0; i < pos.count; i++) {
-      pos.setY(i, getTerrainHeight(pos.getX(i), pos.getZ(i)))
-    }
-    geo.computeVertexNormals()
-    return geo
-  }, [])
+  // One writer for the wind clock. Every swaying material reads the same uniform.
+  useFrame((state) => {
+    windUniforms.uTime.value = state.clock.elapsedTime
+  })
 
   return (
-    <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial color="#9a8b5a" />
-    </mesh>
+    <>
+      <SkyDome />
+      <Mountains />
+      <Terrain />
+      <Road />
+      <Grass />
+      <Trees />
+      <Rocks />
+      <Colliders />
+    </>
   )
 }
