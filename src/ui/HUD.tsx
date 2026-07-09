@@ -324,6 +324,8 @@ export function HUD() {
             <em>brake</em>
             <b className="hud-key">A</b>
             <em>handbrake</em>
+            <b className="hud-key">RB</b>
+            <em>camera</em>
             <b className="hud-key">Y</b>
             <em>reset</em>
           </>
@@ -333,6 +335,8 @@ export function HUD() {
             <em>drive</em>
             <b className="hud-key">SPACE</b>
             <em>handbrake</em>
+            <b className="hud-key">C</b>
+            <em>camera</em>
             <b className="hud-key">R</b>
             <em>reset</em>
           </>

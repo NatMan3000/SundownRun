@@ -384,8 +384,84 @@ html[data-intro] .hud-hint { opacity: 0; }
   opacity: 0.62;
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85);
 }
+/* ---------------- the garage ---------------- */
+
+.intro__garage {
+  margin-top: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+.intro__chev {
+  pointer-events: auto;
+  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 179, 92, 0.32);
+  background: rgba(26, 20, 16, 0.45);
+  color: var(--amber, #FFB35C);
+  font-size: 19px;
+  line-height: 1;
+  padding-bottom: 2px;
+  user-select: none;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.intro__chev:hover {
+  background: rgba(255, 179, 92, 0.16);
+  border-color: rgba(255, 179, 92, 0.62);
+  transform: scale(1.08);
+}
+.intro__chev:active { transform: scale(0.93); }
+
+.intro__car { min-width: 250px; }
+.intro__carname {
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  margin-right: -0.2em;
+  color: #F2E8D5;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.85);
+  /* keyed on the body id, so the name re-animates on every swap */
+  animation: carSwap 260ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes carSwap {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+.intro__dots {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.intro__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(242, 232, 213, 0.26);
+  transition: background 200ms ease, transform 200ms ease;
+}
+.intro__dot--on {
+  background: var(--amber, #FFB35C);
+  transform: scale(1.3);
+}
+
+.intro__garagehint {
+  margin-top: 13px;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #F2E8D5;
+  opacity: 0.44;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
+}
+
 .intro__go {
-  margin-top: 40px;
+  margin-top: 34px;
   font-size: 12px;
   letter-spacing: 0.3em;
   text-transform: uppercase;
