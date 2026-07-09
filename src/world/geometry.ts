@@ -308,33 +308,39 @@ export function makeGrassGeometry(): THREE.BufferGeometry {
 
 // ---------- mountains ----------
 //
-// THE THIRD DEPTH PLANE, and it took three goes to get right.
+// THE THIRD DEPTH PLANE, and it took four goes.
 //
-// v1 stood on the terrain at r=900-1170. That put them BEHIND the far plane from most
-// of the bowl (the camera only reaches 1200 m), so half the time there were no
-// mountains at all, and where they did survive they were lit by the sun rig and came
-// out as a pale rock wall stacked on top of the rim.
+// v1 stood on the terrain at r=900-1170. That put them behind the far plane from most of
+// the bowl (the camera only reaches 1200 m), so half the time there were no mountains at
+// all, and where they survived the sun rig lit them into a pale rock wall on top of the
+// rim.
 //
-// They are now a BACKDROP: one ring, locked to the camera in x/z (Mountains.tsx), so
-// they sit at a constant ~1000-1100 m from the eye no matter where the car is. That
-// buys three things at once:
+// v2 made them a camera-locked backdrop, unlit, with the haze mixed into their vertex
+// colours. Better, but it earned the note that killed it: a solid flat lavender band with
+// a hard top edge cutting across the sky, which "lifts" to reveal the real rim as you
+// approach. That is what ANY opaque silhouette does when its colour is a single fogged
+// tone and the sky behind it is a gradient. Fog toward one colour can never match a
+// gradient, so the shape reads as a curtain hung in front of the sky.
 //
-//   - they can never clip the far plane, and they are visible from everywhere;
-//   - their distance is constant, so the fog rig (near 288, far 1500) always eats
-//     ~62-70% of them. They read as haze, which is the whole brief;
-//   - the rim, which is real geometry at 300-900 m, occludes them by ordinary depth.
-//     Drive toward the wall and the mountains disappear behind it, exactly as they
-//     should.
+// v3 is the fix, and it is a different idea: the mountains do not fade toward a COLOUR,
+// they fade toward TRANSPARENCY. Alpha runs to zero at every summit and grows downward,
+// so at the silhouette the actual sky is what you see - by construction, not by
+// approximation, and at every elevation and every bearing. There is no top edge to find
+// because the geometry's top edge is invisible. Approaching the rim now reads as haze
+// receding behind a hill, because that is literally what is happening.
 //
-// The sun shading is BAKED into the vertex colours from the flat face normal, and the
-// material is unlit. That is deliberate: a lit material at this distance turns every
-// sun-facing slope into pale warm rock, which is precisely the wall the art director
-// rejected. Baking it means the silhouette keeps its shape without ever brightening
-// past the haze it is supposed to be dissolving into.
+// Three consequences, all deliberate:
+//   - `fog={false}`: the scene fog is a warm #CDA184 and would drag the alpha-blended
+//     result back toward the solid tone we are escaping. This material drives its own
+//     fade and nothing else touches it.
+//   - the rings are emitted FAR-FIRST, because depthWrite is off and painter's order is
+//     all that separates them. Near-over-far is what makes them layer.
+//   - the sun shading is still baked in from the face normal, so the silhouettes keep
+//     their shape without ever brightening past the haze they are dissolving into.
 
 const MOUNTAIN_BASE = lin('#4E587A')
 const MOUNTAIN_TOP = lin('#838AAA')
-/** Where a ridge goes when it dissolves. Pale, and only barely warmer than the peaks. */
+/** A touch of pre-haze, so the far rings sit behind the near ones before alpha even acts. */
 const MOUNTAIN_HAZE = lin('#B9B4C2')
 
 interface Ring {
@@ -344,60 +350,66 @@ interface Ring {
   topMin: number
   topMax: number
   haze: number
+  /** peak opacity, reached `fade` metres below the summit */
+  maxAlpha: number
+  /** metres over which alpha climbs from 0 at the summit */
+  fade: number
   seed: number
   spikes: number
 }
 
-// Kept under the far plane with room for the peaks, and kept LOW: from the middle of
-// the bowl the terrain ridge subtends ~9 deg and these top out around 13, so the sky
-// owns everything above them. A magenta debug build proved the first draft filled the
-// entire frame above the ridge, which is exactly the wall the art director rejected.
-// The terrain ridge subtends ~9.4 deg from mid-bowl (135 m at ~820 m). These peaks
-// clear it by 1-3 deg and no more, so they hug the horizon and the sky keeps the rest.
+// Near to far. Peaks clear the terrain ridge by 1-3 degrees and no more, so the sky owns
+// everything above them. Distances stay under the 1200 m far plane with room for the
+// peaks: sqrt(1102^2 + 184^2) = 1117.
 const RINGS: Ring[] = [
-  { radius: 985, wobble: 55, topMin: 148, topMax: 164, haze: 0.22, seed: 11.3, spikes: 4 },
-  { radius: 1035, wobble: 55, topMin: 156, topMax: 174, haze: 0.44, seed: 47.9, spikes: 6 },
-  { radius: 1085, wobble: 45, topMin: 165, topMax: 184, haze: 0.66, seed: 83.1, spikes: 3 },
+  { radius: 985, wobble: 55, topMin: 148, topMax: 164, haze: 0.10, maxAlpha: 0.68, fade: 92, seed: 11.3, spikes: 4 },
+  { radius: 1035, wobble: 55, topMin: 156, topMax: 174, haze: 0.22, maxAlpha: 0.50, fade: 84, seed: 47.9, spikes: 6 },
+  { radius: 1085, wobble: 45, topMin: 165, topMax: 184, haze: 0.36, maxAlpha: 0.36, fade: 76, seed: 83.1, spikes: 3 },
 ]
 
 const SEG = 224
-const LAYERS = 5
-/** Well below the bowl floor. The rim hides it from inside; nothing else can see it. */
+/** 7, not 5: the alpha ramp is interpolated across these, and the summit needs headroom. */
+const LAYERS = 7
+/** Well below the bowl floor. The terrain hides it from inside; nothing else can see it. */
 const BASE_Y = -140
 
 export function makeMountainGeometry(): THREE.BufferGeometry {
   const sun = getSunDirection()
   const tris = RINGS.length * SEG * LAYERS * 2
   const position = new Float32Array(tris * 9)
-  const color = new Float32Array(tris * 9)
+  const aCol = new Float32Array(tris * 9)
+  const aAlpha = new Float32Array(tris * 3)
   let o = 0
+  let ao = 0
 
-  const push = (x: number, y: number, z: number, col: [number, number, number]) => {
+  const push = (x: number, y: number, z: number, col: [number, number, number], a: number) => {
     position[o] = x
     position[o + 1] = y
     position[o + 2] = z
-    color[o] = col[0]
-    color[o + 1] = col[1]
-    color[o + 2] = col[2]
+    aCol[o] = col[0]
+    aCol[o + 1] = col[1]
+    aCol[o + 2] = col[2]
     o += 3
+    aAlpha[ao++] = a
   }
 
-  // Flat-face lambert, evaluated once at build time. A quad's normal is close enough
-  // to its own outward radial for a silhouette 1 km away.
+  // Flat-face lambert, evaluated once at build time. A quad's normal is close enough to
+  // its own outward radial for a silhouette 1 km away.
   const shadeAt = (th: number): number => {
-    const nx = Math.cos(th)
-    const nz = Math.sin(th)
-    const d = nx * sun.x + nz * sun.z
+    const d = Math.cos(th) * sun.x + Math.sin(th) * sun.z
     return 0.74 + 0.26 * Math.max(0, d)
   }
 
-  for (const ring of RINGS) {
+  // FAR FIRST. depthWrite is off, so whatever is drawn last wins the blend.
+  for (let ri = RINGS.length - 1; ri >= 0; ri--) {
+    const ring = RINGS[ri]
     const baseCol = mix3(MOUNTAIN_BASE, MOUNTAIN_HAZE, ring.haze)
     const topCol = mix3(MOUNTAIN_TOP, MOUNTAIN_HAZE, ring.haze * 0.85)
 
     const px: number[][] = []
     const py: number[][] = []
     const pz: number[][] = []
+    const pa: number[][] = []
     const shade: number[] = []
     for (let i = 0; i < SEG; i++) {
       const th = (i / SEG) * Math.PI * 2
@@ -413,17 +425,23 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
       const cx: number[] = []
       const cy: number[] = []
       const cz: number[] = []
+      const ca: number[] = []
       for (let l = 0; l <= LAYERS; l++) {
         const f = l / LAYERS
         const jitter = (hash2D(i * 1.7 + ring.seed, l * 3.1) - 0.5) * 15 * (1 - f * 0.55)
         const rr = R * (1 - 0.1 * f * f) + jitter
+        const y = BASE_Y + (top - BASE_Y) * Math.pow(f, 0.85)
         cx.push(Math.cos(th) * rr)
-        cy.push(BASE_Y + (top - BASE_Y) * Math.pow(f, 0.85))
+        cy.push(y)
         cz.push(Math.sin(th) * rr)
+        // ZERO at the summit. This is the whole trick: the silhouette is the sky.
+        const k = Math.min(1, Math.max(0, (top - y) / ring.fade))
+        ca.push(ring.maxAlpha * Math.pow(k, 0.75))
       }
       px.push(cx)
       py.push(cy)
       pz.push(cz)
+      pa.push(ca)
       shade.push(shadeAt(th))
     }
 
@@ -437,20 +455,20 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
         const b = mix3(baseCol, topCol, f1)
         const c0: [number, number, number] = [a[0] * sh, a[1] * sh, a[2] * sh]
         const c1: [number, number, number] = [b[0] * sh, b[1] * sh, b[2] * sh]
-        push(px[i][l], py[i][l], pz[i][l], c0)
-        push(px[j][l], py[j][l], pz[j][l], c0)
-        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], c1)
-        push(px[i][l], py[i][l], pz[i][l], c0)
-        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], c1)
-        push(px[i][l + 1], py[i][l + 1], pz[i][l + 1], c1)
+        push(px[i][l], py[i][l], pz[i][l], c0, pa[i][l])
+        push(px[j][l], py[j][l], pz[j][l], c0, pa[j][l])
+        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], c1, pa[j][l + 1])
+        push(px[i][l], py[i][l], pz[i][l], c0, pa[i][l])
+        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], c1, pa[j][l + 1])
+        push(px[i][l + 1], py[i][l + 1], pz[i][l + 1], c1, pa[i][l + 1])
       }
     }
   }
 
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.BufferAttribute(position, 3))
-  g.setAttribute('color', new THREE.BufferAttribute(color, 3))
-  g.computeVertexNormals()
+  g.setAttribute('aCol', new THREE.BufferAttribute(aCol, 3))
+  g.setAttribute('aAlpha', new THREE.BufferAttribute(aAlpha, 1))
   g.computeBoundingSphere()
   return g
 }

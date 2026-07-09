@@ -1,9 +1,11 @@
 // ============================================================
 //  INPUT - analog first, last-touched-device wins
 // ------------------------------------------------------------
-//  Keyboard : WASD / arrows, Space = handbrake, R = reset
+//  Keyboard : WASD / arrows, Space = handbrake, C = camera,
+//             R = reset to road, Shift+R = restart run, Esc = menu
 //  Gamepad  : left stick = steer, RT = throttle, LT = brake,
-//             A = handbrake, Y = reset
+//             A = handbrake, Y = reset, RB = camera,
+//             View = restart run, Menu = exit to title
 //
 //  Digital keys are attack/release smoothed so they never twitch,
 //  and lose authority + attack speed as the car goes faster (see
@@ -81,8 +83,20 @@ const KB_TAME_LO_KMH = 30 //  below this the keyboard is left alone entirely
 const KB_TAME_HI_KMH = 120 // by here the taming is fully applied
 // Taming depends on SPEED ONLY. The knob scales the rack and the attack rate; letting
 // it also scale the taming made the mapping circular and impossible to reason about.
-const KB_AUTHORITY_DROP = 0.15 // held key asks for 85% of lock at speed
-const KB_ATTACK_DROP = 0.4 //    and gets there at 60% of the rate
+// A held key asks for 92% of lock at speed. It used to be 70%, then 85% - each drop
+// stacked on top of a rack that was already conservative, and the result was a car that
+// would not turn. The rack alone now carries the speed sensitivity; this is only enough
+// to keep a digital key from being *quite* as absolute as a pinned analog stick.
+const KB_AUTHORITY_DROP = 0.08
+const KB_ATTACK_DROP = 0.4 // and gets there at 60% of the rate at speed
+
+/**
+ * Knob gamma. The knob is 0.6..1.6 around a default of 1.0, but a linear map would put
+ * the calm end at 0.6x of default, which is limp. 0.8 gamma pulls the bottom up
+ * (0.6 -> 0.66x) and stretches the top (1.6 -> 1.46x): calm still corners, aggressive
+ * is genuinely loose.
+ */
+const KNOB_GAMMA = 0.8
 
 function smoothstep(e0: number, e1: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)))
@@ -102,11 +116,22 @@ export function steeringKnob(): number {
   return Math.max(0.6, Math.min(1.6, v))
 }
 
+/**
+ * The knob after its gamma - what the rack and the attack rate actually scale by.
+ * One owner, so the rack (useVehiclePhysics) and the keyboard (below) can never drift
+ * out of step. 1.0 in, 1.0 out.
+ */
+export function steeringGain(): number {
+  return Math.pow(steeringKnob(), KNOB_GAMMA)
+}
+
 // ---------- device state ----------
 const keys = { fwd: false, back: false, left: false, right: false, hand: false }
 let device: 'keyboard' | 'gamepad' = 'keyboard'
 let padResetPrev = false
 let padCamPrev = false
+let padRestartPrev = false
+let padMenuPrev = false
 let mounted = 0
 
 /**
@@ -115,6 +140,22 @@ let mounted = 0
  * owns the actual mode; input only ever says "next".
  */
 export const cameraSignal = { cycleNonce: 0 }
+
+/**
+ * RESET TIERS. Three of them, increasingly total:
+ *
+ *   R          "put me back on the road here"  -> useGameStore.requestReset()
+ *   Shift+R    "restart the run"               -> restartSignal, teleport to getSpawn()
+ *   Escape     "back to the menu"              -> a real page reload
+ *
+ * Shift+R voids the lap in progress and disarms timing exactly as R does. It does NOT
+ * touch bestLapMs - it is a restart, not amnesia. Escape reloads, which is the only
+ * honest full reset: the title card comes back and nothing is carried over except what
+ * the store deliberately persists (best lap, steering, car body).
+ *
+ * Bumped on a rising edge only. Gamepad: View/Back (8) restarts, Menu/Start (9) exits.
+ */
+export const restartSignal = { nonce: 0 }
 
 function setDevice(d: 'keyboard' | 'gamepad') {
   if (device === d) return
@@ -170,7 +211,14 @@ function onKeyDown(e: KeyboardEvent) {
       keys.hand = true
       break
     case 'KeyR':
-      useGameStore.getState().requestReset()
+      // Shift+R is the bigger hammer. Checked here rather than as a separate binding
+      // so the two can never both fire from one press.
+      if (e.shiftKey) restartSignal.nonce++
+      else useGameStore.getState().requestReset()
+      break
+    case 'Escape':
+      // The honest full reset. `e.repeat` is filtered above, so this fires once.
+      window.location.reload()
       break
     case 'KeyC':
       // `e.repeat` is filtered at the top, so holding C cycles exactly once.
@@ -290,9 +338,19 @@ export function updateInput(dt: number): void {
     const rb = pad.buttons[5]?.pressed ?? false
     if (rb && !padCamPrev) cameraSignal.cycleNonce++
     padCamPrev = rb
+
+    const view = pad.buttons[8]?.pressed ?? false // View / Back / Select
+    if (view && !padRestartPrev) restartSignal.nonce++
+    padRestartPrev = view
+
+    const menu = pad.buttons[9]?.pressed ?? false // Menu / Start
+    if (menu && !padMenuPrev) window.location.reload()
+    padMenuPrev = menu
   } else {
     padResetPrev = false
     padCamPrev = false
+    padRestartPrev = false
+    padMenuPrev = false
     if (device === 'gamepad') setDevice('keyboard')
   }
 
@@ -317,7 +375,7 @@ export function updateInput(dt: number): void {
   // physics body. That closes a loop - input -> forces -> velocity -> speed -> input -
   // so a single NaN anywhere in it would latch here forever (approach() never returns
   // from NaN). Treat a non-finite speed as zero and let the physics side recover.
-  const knob = steeringKnob()
+  const gain = steeringGain()
   const spdKmh = Number.isFinite(telemetry.speedKmh) ? telemetry.speedKmh : 0
   const tame = smoothstep(KB_TAME_LO_KMH, KB_TAME_HI_KMH, spdKmh)
   const authority = 1 - KB_AUTHORITY_DROP * tame
@@ -329,7 +387,7 @@ export function updateInput(dt: number): void {
     // A centre-crossing input is a counter-steer. It is never tamed and never slowed.
     steerRate = STEER_FLIP
   } else {
-    steerRate = STEER_ATTACK * knob * (1 - KB_ATTACK_DROP * tame)
+    steerRate = STEER_ATTACK * gain * (1 - KB_ATTACK_DROP * tame)
   }
   input.steer = approach(input.steer, steerTarget, steerRate, dt)
   if (Math.abs(input.steer) < 0.002) input.steer = 0

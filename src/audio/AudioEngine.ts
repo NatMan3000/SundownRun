@@ -115,6 +115,7 @@ const dbg = {
   laps: 0,
   landings: 0,
   voids: 0,
+  selects: 0,
 }
 
 export type AudioDebug = typeof dbg
@@ -606,6 +607,21 @@ export function playLap(best: boolean): void {
     tone('sine', root / 4, t, 0.16, 0.9) //   two octaves down: the weight of a record
     tone('sine', root * 2, t + 0.3, 0.05, 1.1) // a held sparkle over the top
   }
+}
+
+/**
+ * Garage selector tick. A UI blip, not a chime: short, bright, no tail.
+ * `position` is 0..1 along whatever is being scrolled, so the pitch climbs as
+ * you move up the list - a little ladder, whether that list has 4 rungs or 11.
+ */
+export function playSelect(position: number): void {
+  const g = G
+  if (!g) return
+  const t = g.ctx.currentTime + 0.002
+  dbg.selects++
+  const hz = semi(C5 * 2, clamp01(position) * 10) // up to a major seventh above
+  bell(hz, t, 0.13, 0.16, 1.6)
+  tone('sine', hz * 1.5, t, 0.045, 0.1)
 }
 
 /**

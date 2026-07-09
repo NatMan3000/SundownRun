@@ -16,6 +16,16 @@ function loadCarBody(): CarBodyId {
   return CONFIG.carBody
 }
 
+function loadBestLap(): number | null {
+  try {
+    const v = parseFloat(localStorage.getItem('sundown-run.bestLapMs') ?? '')
+    if (Number.isFinite(v) && v > 10_000) return v // a sub-10s "lap" is stale garbage
+  } catch {
+    // storage unavailable
+  }
+  return null
+}
+
 function loadNumber(key: string, fallback: number, min: number, max: number): number {
   try {
     const v = parseFloat(localStorage.getItem(key) ?? '')
@@ -104,19 +114,29 @@ export const useGameStore = create<GameStore>((set) => ({
   lapCount: 0,
   lastLapMs: null,
   lastLapDirty: false,
-  bestLapMs: null,
+  bestLapMs: loadBestLap(),
   currentLapDirty: false,
   setCurrentLapDirty: (d) => set((s) => (s.currentLapDirty === d ? s : { currentLapDirty: d })),
   lapVoidNonce: 0,
   voidLap: () => set((s) => ({ lapVoidNonce: s.lapVoidNonce + 1, currentLapDirty: false })),
   completeLap: (ms, dirty) =>
-    set((s) => ({
-      lapCount: s.lapCount + 1,
-      lastLapMs: ms,
-      lastLapDirty: dirty,
-      currentLapDirty: false,
-      bestLapMs: dirty ? s.bestLapMs : s.bestLapMs === null || ms < s.bestLapMs ? ms : s.bestLapMs,
-    })),
+    set((s) => {
+      const best = dirty ? s.bestLapMs : s.bestLapMs === null || ms < s.bestLapMs ? ms : s.bestLapMs
+      if (best !== s.bestLapMs) {
+        try {
+          localStorage.setItem('sundown-run.bestLapMs', String(best))
+        } catch {
+          // fine - the record just won't survive a reload
+        }
+      }
+      return {
+        lapCount: s.lapCount + 1,
+        lastLapMs: ms,
+        lastLapDirty: dirty,
+        currentLapDirty: false,
+        bestLapMs: best,
+      }
+    }),
 
   resetNonce: 0,
   requestReset: () => set((s) => ({ resetNonce: s.resetNonce + 1 })),

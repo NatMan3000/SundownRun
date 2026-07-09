@@ -13,7 +13,7 @@ import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CONFIG } from '../core/config'
 import { telemetry } from '../core/telemetry'
-import { getTerrainHeight } from '../core/terrain'
+import { ROAD_LENGTH, getTerrainHeight, roadSpline } from '../core/terrain'
 import { useGameStore } from '../core/store'
 import { carVisual } from '../vehicle/carVisual'
 import { cameraState } from '../vehicle/cameraMode'
@@ -62,6 +62,9 @@ declare global {
       /** Runtime steering knob, 0.6..1.6 (persisted). Settable for verification. */
       steering: number
       setSteering: (v: number) => void
+      /** Road spline sampling - lets a checker drive the track without the autopilot. */
+      roadLength: number
+      roadPointAt: (t: number) => [number, number, number]
     }
     __perf?: {
       running: boolean
@@ -194,6 +197,11 @@ export function DevTools() {
         return useGameStore.getState().steering
       },
       setSteering: (v: number) => useGameStore.getState().setSteering(v),
+      roadLength: ROAD_LENGTH,
+      roadPointAt: (t: number) => {
+        const p = roadSpline.getPointAt(((t % 1) + 1) % 1)
+        return [p.x, p.y, p.z]
+      },
     }
     return () => {
       delete window.__game

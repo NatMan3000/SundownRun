@@ -12,17 +12,20 @@ import { getScatter, treeIsReachable, type TreeInstance } from './scatter'
 // Every reachable tree carries a static trunk collider, so a tree is never a ghost.
 // What happens when you hit one depends only on how fast you were going:
 //
-//   under 40 km/h : nothing special. rapier resolves a solid collision, the car
-//                   stops or slews, and the drive worker's dv detector raises
-//                   telemetry.impact all by itself. No code runs here at all.
+//   under the knob : nothing special. rapier resolves a solid collision, the car
+//                    stops or slews, and the drive worker's dv detector raises
+//                    telemetry.impact all by itself. No code runs here at all.
 //
-//   over 40 km/h  : the trunk gives way. We disable its collider in the physics
-//                   step's BEFORE hook - the frame the car is about to reach it -
-//                   so no contact impulse is ever solved and the car cannot be
-//                   bricked at 190 km/h. In its place we apply a modest impulse
-//                   (a couple of m/s of speed, felt but never fatal), raise
-//                   telemetry.impact for the camera kick, thump the audio, and
-//                   hand the instance to the animator to be flung and toppled.
+//   over the knob  : the trunk gives way. We disable its collider in the physics
+//                    step's BEFORE hook - the frame the car is about to reach it -
+//                    so no contact impulse is ever solved and the car cannot be
+//                    bricked at 190 km/h. In its place we apply a modest impulse
+//                    (a couple of m/s of speed, felt but never fatal), raise
+//                    telemetry.impact for the camera kick, thump the audio, and
+//                    hand the instance to the animator to be flung and toppled.
+//
+// "the knob" is CONFIG.treeSmashKmh - a kid can set it to 5 and mow the forest, or to
+// 300 and never break a branch.
 //
 // The look-ahead is what makes this safe: at 53 m/s a physics step moves the car
 // 0.88 m, so we test the chassis box swept forward by one step. A tree is disarmed

@@ -31,7 +31,7 @@ import type { RapierRigidBody } from '@react-three/rapier'
 import { CONFIG } from '../core/config'
 import { telemetry } from '../core/telemetry'
 import { useGameStore } from '../core/store'
-import { initInput, input, steeringKnob, updateInput } from '../core/input'
+import { initInput, input, restartSignal, steeringGain, updateInput } from '../core/input'
 import { ROAD_WIDTH, getSpawn, getTerrainHeight, nearestRoadPoint } from '../core/terrain'
 
 import { carVisual } from './carVisual'
@@ -184,6 +184,8 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     settleSteps: 6,
     uprightTimer: 0,
     resetPending: false,
+    restartPending: false,
+    restartTick: 0,
     latAccel: 0,
     longAccel: 0,
     beta: 0,
@@ -239,6 +241,26 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     body.resetTorques(false)
 
     updateInput(DT)
+
+    // Shift+R / gamepad View: restart the run from the start line.
+    if (s.restartTick !== restartSignal.nonce) {
+      s.restartTick = restartSignal.nonce
+      s.restartPending = true
+    }
+    if (s.restartPending) {
+      s.restartPending = false
+      s.resetPending = false // a restart supersedes any queued reset
+      restartAtSpawn(body)
+      // Same lap bookkeeping as a reset: void the lap in progress, disarm timing.
+      // bestLapMs is never touched - a restart is not amnesia.
+      lap.onTeleport(performance.now())
+      vehicleSignals.resetTick++
+      s.settleSteps = 4
+      s.uprightTimer = 0
+      s.belowTerrainTimer = 0
+      telemetry.impact = 0
+      return
+    }
 
     if (s.resetPending) {
       s.resetPending = false
@@ -313,7 +335,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     // Full lock always commands the same lateral acceleration, whatever the speed.
     // See STEERING.latLimitG - this is the whole fix for "uncontrollable at 120".
     const gCap =
-      (STEERING.wheelbase * STEERING.latLimitG * 9.81 * steeringKnob()) /
+      (STEERING.wheelbase * STEERING.latLimitG * 9.81 * steeringGain()) /
       Math.max(speed * speed, 1)
     let limit = Math.min(STEERING.maxAngleLow, Math.max(STEERING.minAngle, gCap))
     // The rack re-opens only to CATCH a slide, never to feed one.
@@ -819,6 +841,35 @@ function reportNaN(s: { nanReported: boolean }, where: string) {
     `[vehicle] non-finite value at "${where}" - refusing to hand it to rapier, resetting to the road. ` +
       `Left unchecked this panics the physics WASM and every later call throws "recursive use of an object".`
   )
+}
+
+/**
+ * Restart the run: back to the start line, facing down the straight, stopped.
+ * `getSpawn()` is a pure function of the road spline, so this is the one teleport
+ * that cannot depend on the car's (possibly poisoned) current position.
+ */
+function restartAtSpawn(body: RapierRigidBody) {
+  const spawn = getSpawn()
+  if (!finite(spawn.position.x) || !finite(spawn.position.y) || !finite(spawn.position.z)) return
+
+  _rp.x = spawn.position.x
+  _rp.y = spawn.position.y
+  _rp.z = spawn.position.z
+  body.setTranslation(_rp, true)
+
+  _q.setFromAxisAngle(AXIS_Y, spawn.rotationY)
+  body.setRotation(_q, true)
+
+  _rv.x = 0
+  _rv.y = 0
+  _rv.z = 0
+  body.setLinvel(_rv, true)
+  body.setAngvel(_rv, true)
+  body.resetForces(true)
+  body.resetTorques(true)
+
+  _prevLinvel.set(0, 0, 0)
+  for (let i = 0; i < WHEEL_COUNT; i++) wheelOmega[i] = 0
 }
 
 function teleportToRoad(body: RapierRigidBody, s?: { nanReported: boolean }) {

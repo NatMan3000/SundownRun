@@ -157,36 +157,39 @@ export const STEERING = {
   /**
    *  THE RACK IS LIMITED BY PHYSICS, NOT BY A FADE CURVE.
    *
-   *  Full lock commands a steady-state lateral acceleration of `latLimitG * knob`, so
-   *      maxAngle(v) = wheelbase * latLimitG * knob * g / v^2
-   *  Under about 25 km/h that is wider than the mechanical lock and `maxAngleLow`
-   *  rules; above it, this does. The result is constant-g steering: full lock always
-   *  asks for the same cornering force, at any speed. That is how a real car feels.
-   *  `knob` is the runtime steering setting (useGameStore.steering, 0.6..1.6).
+   *  Full lock commands a steady-state lateral acceleration of `latLimitG * gain`, so
+   *      maxAngle(v) = wheelbase * latLimitG * gain * g / v^2
+   *  Under about 33 km/h that is wider than the mechanical lock and `maxAngleLow`
+   *  rules; above it, this does. Constant-g steering: full lock always asks for the
+   *  same cornering force, at any speed. `gain` is the runtime steering knob
+   *  (useGameStore.steering, 0.6..1.6) through a 0.8 gamma - see core/input.ts.
    *
-   *  WHY (the old fade curve was the defect). Grip-limited road-wheel angle vs what
-   *  that curve handed the player:
+   *  latLimitG SITS AT THE GRIP LIMIT, ON PURPOSE. The tyres peak at muFront 1.62 g.
+   *  Commanding meaningfully less than that (the old 1.5 -> 1.28 g at the keyboard)
+   *  means full lock only ever uses ~79% of the grip the car has, which is exactly
+   *  what "it understeers, it barely turns" feels like. At 1.8 the rack asks for
+   *  1.66 g at the keyboard - a hair past the peak - so full lock carves at maximum
+   *  grip with the tyre just starting to slip. The slip curve and the restoring
+   *  assist are what make that edge safe rather than a spin.
    *
-   *      speed     old rack    grip limit    excess
-   *       60 km/h   25.5 deg     9.3 deg      2.7x
-   *      120 km/h   12.2 deg     2.3 deg      5.2x
-   *      190 km/h    9.5 deg     0.9 deg     10.2x
+   *  WHAT THE KNOB BUYS, at 120 km/h (grip limit 1.62 g):
    *
-   *  On a gamepad you feel that and back off. On a keyboard every press is full
-   *  lock, so at 120 km/h every corner was a spin request.
+   *      knob   pad g    keyboard g    vs grip    attack
+   *      0.6    1.20g    1.10g         0.68x      3.19/s   calm, still corners
+   *      1.0    1.80g    1.66g         1.02x      4.80/s   default - carves at the limit
+   *      1.6    2.62g    2.41g         1.49x      6.99/s   loose - asks for half again
+   *                                                        more than the tyres have
    *
-   *  WHAT THE KNOB BUYS, at 120 km/h (grip limit is 1.62 g):
+   *  NO DEAD ZONE across the handover (knob 1.0, full keyboard lock):
    *
-   *      knob   rack     pad g    keyboard g   attack
-   *      0.6    1.29deg  0.90g    0.76g        2.88/s   calm
-   *      1.0    2.15deg  1.50g    1.28g        4.80/s   default - firm, still gripping
-   *      1.6    3.45deg  2.40g    2.04g        7.68/s   aggressive - asks for 1.26x
-   *                                                     grip, so the front washes and
-   *                                                     the tail follows. Deliberate:
-   *                                                     the drift-recovery assist is
-   *                                                     what keeps it catchable.
+   *      20 km/h  0.66g  (mech lock)     60 km/h  1.76g  (g-cap)
+   *      30 km/h  1.48g  (mech lock)     90 km/h  1.69g
+   *      33 km/h  1.79g  <- handover    120 km/h  1.66g
+   *      40 km/h  1.80g  (g-cap)        190 km/h  1.66g
+   *
+   *  Commanded g rises monotonically into the plateau and stays there.
    */
-  latLimitG: 1.5,
+  latLimitG: 1.8,
   /** Wheelbase, metres. Front axle to rear axle. */
   wheelbase: 2 * WHEEL.halfBase,
   /**
