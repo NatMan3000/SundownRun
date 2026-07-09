@@ -342,6 +342,11 @@ const MOUNTAIN_BASE = lin('#4E587A')
 const MOUNTAIN_TOP = lin('#838AAA')
 /** A touch of pre-haze, so the far rings sit behind the near ones before alpha even acts. */
 const MOUNTAIN_HAZE = lin('#B9B4C2')
+/** The scene fog colour (`FOG_COLOR` in fx/Lighting.tsx). The dense lower body of each ring
+ *  is pulled toward this so plane 3 (mountains) melts into the SAME warm atmosphere the
+ *  fogged foothills (plane 2) dissolve into - the D-FOG "shared atmosphere" fix. Without it
+ *  a fog:false ring tints cool grey-violet and butts against the warm haze as a cutout. */
+const MOUNTAIN_FOG = lin('#CDA184')
 
 interface Ring {
   radius: number
@@ -403,14 +408,20 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
   // FAR FIRST. depthWrite is off, so whatever is drawn last wins the blend.
   for (let ri = RINGS.length - 1; ri >= 0; ri--) {
     const ring = RINGS[ri]
-    const baseCol = mix3(MOUNTAIN_BASE, MOUNTAIN_HAZE, ring.haze)
-    const topCol = mix3(MOUNTAIN_TOP, MOUNTAIN_HAZE, ring.haze * 0.85)
+    // Cool violet body, low -> high. The base is no longer pre-hazed toward the cool grey;
+    // the warm bridge below now owns the low band (that pre-haze was part of what made the
+    // rings read as cool cutouts). The peaks keep a touch of MOUNTAIN_HAZE so they recede.
+    const bodyLow = MOUNTAIN_BASE
+    const bodyHigh = mix3(MOUNTAIN_TOP, MOUNTAIN_HAZE, ring.haze)
+    // How hard this ring pulls toward the scene fog colour. Farther rings recede further
+    // into the warm haze, so they sit BEHIND the near ones in atmosphere as well as depth.
+    const warmAmt = 0.42 + ring.haze * 0.9
 
     const px: number[][] = []
     const py: number[][] = []
     const pz: number[][] = []
     const pa: number[][] = []
-    const shade: number[] = []
+    const pc: [number, number, number][][] = []
     for (let i = 0; i < SEG; i++) {
       const th = (i / SEG) * Math.PI * 2
       const ct = Math.cos(th)
@@ -421,11 +432,13 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
       const t = Math.min(1, Math.max(0, n1 * 0.8 + n2 * 0.4 - 0.12 + spike))
       const top = ring.topMin + (ring.topMax - ring.topMin) * t
       const R = ring.radius + (n2 - 0.5) * ring.wobble
+      const sh = shadeAt(th)
 
       const cx: number[] = []
       const cy: number[] = []
       const cz: number[] = []
       const ca: number[] = []
+      const cc: [number, number, number][] = []
       for (let l = 0; l <= LAYERS; l++) {
         const f = l / LAYERS
         const jitter = (hash2D(i * 1.7 + ring.seed, l * 3.1) - 0.5) * 15 * (1 - f * 0.55)
@@ -434,33 +447,35 @@ export function makeMountainGeometry(): THREE.BufferGeometry {
         cx.push(Math.cos(th) * rr)
         cy.push(y)
         cz.push(Math.sin(th) * rr)
-        // ZERO at the summit. This is the whole trick: the silhouette is the sky.
+        // k: 0 at the summit, 1 a `fade` below it. Drives BOTH the alpha ramp (silhouette
+        // dissolves to sky) and the warm bridge (dense lower body takes the fog colour).
         const k = Math.min(1, Math.max(0, (top - y) / ring.fade))
+        // ZERO at the summit. This is the whole trick: the silhouette is the sky.
         ca.push(ring.maxAlpha * Math.pow(k, 0.75))
+        // Cool violet body, then a warm-haze pull toward #CDA184. A floor of 0.4 keeps even
+        // the thin visible band near the summit sharing atmosphere (never a saturated cool
+        // cutout); it deepens to full warmAmt in the dense base. The alpha ramp means the
+        // very top is mostly sky anyway, so warming it costs no hard edge.
+        let col = mix3(bodyLow, bodyHigh, f)
+        col = mix3(col, MOUNTAIN_FOG, warmAmt * (0.4 + 0.6 * k))
+        cc.push([col[0] * sh, col[1] * sh, col[2] * sh])
       }
       px.push(cx)
       py.push(cy)
       pz.push(cz)
       pa.push(ca)
-      shade.push(shadeAt(th))
+      pc.push(cc)
     }
 
     for (let i = 0; i < SEG; i++) {
       const j = (i + 1) % SEG
-      const sh = (shade[i] + shade[j]) * 0.5
       for (let l = 0; l < LAYERS; l++) {
-        const f0 = l / LAYERS
-        const f1 = (l + 1) / LAYERS
-        const a = mix3(baseCol, topCol, f0)
-        const b = mix3(baseCol, topCol, f1)
-        const c0: [number, number, number] = [a[0] * sh, a[1] * sh, a[2] * sh]
-        const c1: [number, number, number] = [b[0] * sh, b[1] * sh, b[2] * sh]
-        push(px[i][l], py[i][l], pz[i][l], c0, pa[i][l])
-        push(px[j][l], py[j][l], pz[j][l], c0, pa[j][l])
-        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], c1, pa[j][l + 1])
-        push(px[i][l], py[i][l], pz[i][l], c0, pa[i][l])
-        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], c1, pa[j][l + 1])
-        push(px[i][l + 1], py[i][l + 1], pz[i][l + 1], c1, pa[i][l + 1])
+        push(px[i][l], py[i][l], pz[i][l], pc[i][l], pa[i][l])
+        push(px[j][l], py[j][l], pz[j][l], pc[j][l], pa[j][l])
+        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], pc[j][l + 1], pa[j][l + 1])
+        push(px[i][l], py[i][l], pz[i][l], pc[i][l], pa[i][l])
+        push(px[j][l + 1], py[j][l + 1], pz[j][l + 1], pc[j][l + 1], pa[j][l + 1])
+        push(px[i][l + 1], py[i][l + 1], pz[i][l + 1], pc[i][l + 1], pa[i][l + 1])
       }
     }
   }

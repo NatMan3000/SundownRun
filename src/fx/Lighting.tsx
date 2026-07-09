@@ -48,11 +48,12 @@ const TEXEL = (SHADOW_RADIUS * 2) / SHADOW_MAP
 
 /** Warm haze. Sits between the sky's warm horizon and its violet anti-sun band. */
 const FOG_COLOR = '#CDA184'
-/** Near is held well out - haze in the first 200 m would only wash the contrast
- *  off the road you are actually looking at. Far runs PAST the draw distance:
- *  the mountains have to survive the haze as readable silhouettes (the third
- *  depth plane), and the rim of foothills hides the far plane for us. */
-const FOG_NEAR = CONFIG.drawDistanceM * 0.24
+/** Near is held out enough that haze never washes the road you are looking at, but
+ *  pulled in from 0.24 to 0.19 (~228 m) for D-FOG: at 0.24 the warm haze barely built
+ *  across the 300-900 m foothill band, so plane 2 stayed crisp and the distant mountains
+ *  had no atmosphere to dissolve INTO. Far still runs PAST the draw distance so the
+ *  silhouettes survive as the third depth plane. */
+const FOG_NEAR = CONFIG.drawDistanceM * 0.19
 const FOG_FAR = CONFIG.drawDistanceM * 1.25
 
 // Per-frame scratch. Nothing in useFrame allocates.
