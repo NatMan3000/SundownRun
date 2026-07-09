@@ -7,6 +7,8 @@ import { Vehicle } from './vehicle/Vehicle'
 import { ChaseCamera } from './vehicle/ChaseCamera'
 import { Lighting } from './fx/Lighting'
 import { Effects } from './fx/Effects'
+import { FxRoot } from './fx/FxRoot'
+import { Delights } from './world/Delights'
 import { AudioSystem } from './audio/AudioSystem'
 import { HUD } from './ui/HUD'
 import { DevTools } from './dev/DevTools'
@@ -25,6 +27,8 @@ export default function App() {
             <World />
             <Vehicle />
           </Physics>
+          <FxRoot />
+          <Delights />
           <Lighting />
           <Effects />
           <ChaseCamera />
