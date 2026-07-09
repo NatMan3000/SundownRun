@@ -253,31 +253,32 @@ html[data-intro] .hud-hint { opacity: 0; }
   -webkit-backdrop-filter: blur(0px);
 }
 
-/* Scrim and text share one grid cell so the scrim sits directly behind the copy.
-   Gradients only, no backdrop-filter: .intro already has one, which makes it a
-   backdrop root, so a nested backdrop-filter would silently do nothing. */
-.intro__scrim,
-.intro__inner { grid-area: 1 / 1; }
-
-.intro__scrim {
-  width: min(1180px, 96vw);
-  height: min(720px, 90vh);
-  pointer-events: none;
-  /* Heavier under the instruction lines (the sun flares off the car right
-     there), lighter over the title, feathered to nothing well inside the box
-     so no edge is ever visible against the scene. */
-  background:
-    radial-gradient(62% 30% at 50% 76%,
-      rgba(4, 3, 6, 0.50) 0%, rgba(4, 3, 6, 0.36) 45%, rgba(4, 3, 6, 0.08) 78%, rgba(4, 3, 6, 0) 100%),
-    radial-gradient(76% 62% at 50% 50%,
-      rgba(4, 3, 6, 0.34) 0%, rgba(4, 3, 6, 0.24) 50%, rgba(4, 3, 6, 0.06) 80%, rgba(4, 3, 6, 0) 100%);
-}
-
 .intro__inner {
   position: relative;
   text-align: center;
   padding: 0 24px;
   animation: introRise 620ms cubic-bezier(0.16, 0.9, 0.24, 1) both;
+}
+
+/* Localized scrim, anchored to the text block so it follows the copy rather
+   than a guessed pixel box. Gradients only - no backdrop-filter, because .intro
+   already has one and that makes it a backdrop root, which would render a
+   nested backdrop-filter silently inert.
+   The negative inset gives the falloff room to reach zero well outside the
+   text, so no edge is ever visible against the scene. The second stop sits over
+   the instruction rows (lower half of the block), where the sun flares off the
+   car roof and washed the gamepad line out. */
+.intro__inner::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -48% -13%;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 22% at 50% 68%,
+      rgba(4, 3, 6, 0.42) 0%, rgba(4, 3, 6, 0.30) 48%, rgba(4, 3, 6, 0.10) 78%, rgba(4, 3, 6, 0) 100%),
+    radial-gradient(closest-side ellipse at 50% 50%,
+      rgba(4, 3, 6, 0.50) 0%, rgba(4, 3, 6, 0.44) 34%, rgba(4, 3, 6, 0.26) 60%, rgba(4, 3, 6, 0.08) 82%, rgba(4, 3, 6, 0) 100%);
 }
 @keyframes introRise {
   from { opacity: 0; transform: translateY(14px); }

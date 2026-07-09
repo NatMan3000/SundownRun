@@ -61,10 +61,8 @@ export function IntroCard() {
 
   return (
     <div className={out ? 'intro intro--out' : 'intro'}>
-      {/* Local scrim. The spawn sun sits dead ahead and its flare off the car
-          lands right under the instruction lines - the text needs its own
-          ground to stand on, not a darker screen. */}
-      <div className="intro__scrim" aria-hidden="true" />
+      {/* The scrim is .intro__inner::before - anchored to the text block itself
+          so it tracks the copy instead of a guessed pixel box. See hudStyles. */}
       <div className="intro__inner">
         <h1 className="intro__title">SUNDOWN RUN</h1>
         <div className="intro__rule" />
