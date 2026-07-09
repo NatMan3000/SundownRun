@@ -1,0 +1,50 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## Overview
+
+**Sundown Run** - a golden-hour, open-world 3D driving game built for (and eventually by) Josh. Vite + React 19 + `@react-three/fiber` v9 + `@react-three/rapier` physics, Bun runtime. Built end-to-end - blank repo to unconditional sign-off - in a single orchestrated multi-agent session (2026-07-09).
+
+## Current Phase
+
+**Shipped / DONE.** Both independent checker passes signed off against `CONSTITUTION.md` (checker-1 found and the `drive` worker fixed a first-minute drift-physics blocker; checker-2 verified real GPU-timed 60fps performance + a clean-clone build gate). All build agents shut down. Remaining work is post-ship polish - see `open-threads.md`.
+
+## Stack
+
+- Vite 8 + React 19, `@react-three/fiber` v9, `@react-three/drei`, `@react-three/rapier` v2, `@react-three/postprocessing`, three.js 0.185, zustand 5
+- Bun (install/dev/build), TypeScript 7 (`tsc -b`)
+- Dev server: **port 5199, strictPort** - `bun run dev` -> http://localhost:5199
+
+## Architecture
+
+- **`CONSTITUTION.md`** - the binding standard. Art direction ("Golden Hour" - warm low sun, long shadows, atmosphere-everywhere), the 60fps performance budget, and gameplay feel rules. All disputes are settled against this document, never against taste-in-the-moment. Amend deliberately, never drive-by.
+- **`src/core/config.ts`** - Josh's kid-facing knob file. Every tunable (car colour, engine power, grip, camera, time of day) lives here; editing it hot-reloads in the browser. This is the intended entry point for a non-technical collaborator - see the README's "Josh: this bit is for you" section.
+- **`src/core/` / `src/vehicle/` / `src/world/` / `src/fx/` / `src/audio/` / `src/ui/` / `src/dev/`** - frozen core contracts (config / telemetry / store / terrain API) let multiple agents own separate slices of the repo without merge conflicts. Ownership boundaries used during the build:
+  - **world** - terrain, track, trees, boundary/collision
+  - **drive** - vehicle physics, steering, camera, laps
+  - **look** - lighting, post-processing, materials, sky
+  - **avui** - audio, HUD, UI, title screen, garage
+
+## Dev surfaces
+
+- `?demo=1` - scripted autopilot lap segment, records frame times to `window.__perf` (used by the performance checks)
+- `?demo=1&cut=1` - same demo with a fixed camera-cut sequence
+- `window.__game` / `window.__perf` / `window.__delights` - runtime dev inspection hooks
+
+## Gotchas
+
+- **Rapier heightfield colliders are infinitely thin** - a body descending faster than ~28m/s in one 60Hz step can tunnel straight through, and rapier CCD does not arm on it. Backstop: a catch-floor slab plus a below-terrain auto-reset.
+- **`BufferGeometryUtils.mergeGeometries` returns `null` silently** when mixing indexed and non-indexed geometries (e.g. `ExtrudeGeometry` is non-indexed, `CylinderGeometry`/`BoxGeometry` are indexed) - never non-null-assert its result, check for `null` explicitly.
+- **Fogging distant scenery toward a solid colour reads as a flat slab** against a gradient sky, with a hard top edge. Fix: dissolve far geometry by vertex alpha toward zero at the summit (`fog: false`) so the sky shows through, and bake the fog colour into low-altitude vertex colours to keep it visually tied to the fogged mid-ground (the "D-FOG" atmospheric bridge).
+- **Two coplanar authored faces z-fight as a whole-face moire** (e.g. a roof-glass surface copied from the roof's own points). Fix with real geometric separation (a few mm drop), never `polygonOffset`.
+
+## Build process notes
+
+Built via Kai-as-orchestrator + 4 long-lived Opus worker agents (world / drive / look / avui) + 2 independent fresh-context checker agents, coordinated through the Nexus cluster kanban (project 45, "Car Game"). Checker verdicts and working traces are in `scratchpad/checks/` (gitignored - working evidence, not durable project record).
+
+## Next Actions
+
+See `open-threads.md`.
