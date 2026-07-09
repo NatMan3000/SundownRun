@@ -3,9 +3,8 @@ dist/
 .DS_Store
 *.local
 
-# Kai session artifacts - not part of the game
+# Kai working files - not part of the game
 scratchpad/
-sessions/
 
 # Nathan progress-watching folder
 Build Screenshots/
