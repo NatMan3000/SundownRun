@@ -5,16 +5,26 @@
 //  Gamepad  : left stick = steer, RT = throttle, LT = brake,
 //             A = handbrake, Y = reset
 //
-//  Digital keys are attack/release smoothed so they never twitch.
-//  Analog sticks run through a gentle response curve so small
-//  movements stay small. Whichever device produced input most
-//  recently owns the car - there is no setting for this.
+//  Digital keys are attack/release smoothed so they never twitch,
+//  and lose authority + attack speed as the car goes faster (see
+//  KB_TAME_*). Analog sticks run through a gentle response curve so
+//  small movements stay small, and are otherwise left alone - a
+//  stick already gives the player the fine control a key cannot.
+//  Whichever device produced input most recently owns the car -
+//  there is no setting for this.
+//
+//  CONFIG.steering (0.7 calm .. 1.3 twitchy) reaches the car twice:
+//  here, scaling the keyboard's attack rate and how much taming it
+//  gets; and in tuning.ts STEERING.latLimitG, scaling how much lock
+//  the rack will give at speed - which is what the gamepad feels.
 //
 //  updateInput(dt) is called once per PHYSICS step (fixed 60Hz),
 //  which makes the smoothing deterministic and frame-rate proof.
 // ============================================================
 
+import { CONFIG } from './config'
 import { useGameStore } from './store'
+import { telemetry } from './telemetry'
 
 export interface DriveInput {
   throttle: number //   0..1
@@ -56,6 +66,28 @@ const ANALOG_RATE = 26
 
 const STICK_DEADZONE = 0.14
 const TRIGGER_DEADZONE = 0.05
+
+// ---------- keyboard taming (speed sensitive) ----------
+// A stick gives you a hundred positions between straight and full lock. A key gives
+// you two. Left alone, a held key snaps to full lock in ~0.4s at any speed, and at
+// 120 km/h full lock is a spin request. So the digital path loses both authority and
+// attack speed as the car goes faster: at motorway pace a held key asks for a firm
+// lane change, and takes a beat to get there, which is a beat you can steer out of.
+// The gamepad path is untouched - it never needed this.
+const KB_TAME_LO_KMH = 30 //  below this the keyboard is left alone entirely
+const KB_TAME_HI_KMH = 120 // by here the taming is fully applied
+const KB_AUTHORITY_DROP = 0.3 // held key asks for 70% of lock at speed
+const KB_ATTACK_DROP = 0.62 //  and gets there at 38% of the rate
+
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)))
+  return t * t * (3 - 2 * t)
+}
+
+/** CONFIG.steering, fenced to a range that cannot make the car undriveable. */
+function steeringKnob(): number {
+  return Math.max(0.6, Math.min(1.4, CONFIG.steering))
+}
 
 // ---------- device state ----------
 const keys = { fwd: false, back: false, left: false, right: false, hand: false }
@@ -246,11 +278,21 @@ export function updateInput(dt: number): void {
   }
 
   // 3. Keyboard - digital in, analog out.
-  const steerTarget = (keys.left ? -1 : 0) + (keys.right ? 1 : 0)
+  const dir = (keys.left ? -1 : 0) + (keys.right ? 1 : 0)
+  // How hard to tame: 0 at parking speed, 1 at 120 km/h. The knob buys some back.
+  const knob = steeringKnob()
+  const tame = smoothstep(KB_TAME_LO_KMH, KB_TAME_HI_KMH, telemetry.speedKmh) / knob
+  const authority = 1 - KB_AUTHORITY_DROP * Math.min(tame, 1)
+  const steerTarget = dir * authority
+
   let steerRate: number
-  if (steerTarget === 0) steerRate = STEER_RELEASE
-  else if (input.steer !== 0 && Math.sign(steerTarget) !== Math.sign(input.steer)) steerRate = STEER_FLIP
-  else steerRate = STEER_ATTACK
+  if (dir === 0) steerRate = STEER_RELEASE
+  else if (input.steer !== 0 && Math.sign(dir) !== Math.sign(input.steer)) {
+    // A centre-crossing input is a counter-steer. It is never tamed and never slowed.
+    steerRate = STEER_FLIP
+  } else {
+    steerRate = STEER_ATTACK * knob * (1 - KB_ATTACK_DROP * Math.min(tame, 1))
+  }
   input.steer = approach(input.steer, steerTarget, steerRate, dt)
   if (Math.abs(input.steer) < 0.002) input.steer = 0
 

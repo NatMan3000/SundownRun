@@ -52,9 +52,13 @@ export const SUSPENSION = {
   /** Never launch the car into orbit off a kerb. */
   maxForce: 26000,
   /** Anti-roll bars, N/m of left-right compression difference.
-   *  Front stiffer than rear: keeps the nose flat, lets the rear rotate. */
-  antiRollFront: 14000,
-  antiRollRear: 11000,
+   *  Front markedly stiffer than rear. Two jobs: it keeps the body flat (less roll
+   *  means less of the suspension force leaning outward with `carUp`, which is the
+   *  one place roll really does feed back into the physics), and a front-biased bar
+   *  moves load transfer to the front axle, biasing the limit toward understeer -
+   *  the safe, catchable failure. */
+  antiRollFront: 22000,
+  antiRollRear: 14000,
 }
 
 export const TYRE = {
@@ -119,6 +123,16 @@ export const DRIVE = {
   powerFade: 0.86,
   /** Rear-wheel drive. Classic, kickable, and the handbrake has something to do. */
   rearBias: 1.0,
+  /**
+   *  Limited-slip differential. Drive torque is split between the rear wheels in
+   *  proportion to the load on them, clamped to this bias range (0.5 = open, locked
+   *  50/50). A flat 50/50 split sends as much torque to the unloaded inside wheel as
+   *  to the loaded outside one, so mid-corner the inside rear saturates its friction
+   *  circle first, throws away its lateral grip, and the tail leaves - abruptly.
+   *  Feeding torque where the load is makes that transition progressive.
+   */
+  torqueBiasMin: 0.2,
+  torqueBiasMax: 0.8,
   reverseForce: 3800,
   reverseTopKmh: 45,
   /** Total brake force N (multiplied by CONFIG.brakeStrength), split front/rear. */
@@ -136,12 +150,40 @@ export const AERO = {
 }
 
 export const STEERING = {
-  /** Max road-wheel angle at a standstill / at high speed (radians). */
-  maxAngleLow: 0.593, //  34 deg
-  maxAngleHigh: 0.166, // 9.5 deg
-  /** Speed (m/s) at which the high-speed limit is fully applied. */
-  fadeSpeed: 42,
-  /** While drifting the limit re-opens to this, so a slide is always catchable. */
+  /** Max road-wheel angle at a standstill (radians). Mechanical lock. */
+  maxAngleLow: 0.593, // 34 deg
+  /** Absolute floor - the rack never welds itself straight at top speed. */
+  minAngle: 0.012,
+  /**
+   *  THE RACK IS LIMITED BY PHYSICS, NOT BY A FADE CURVE.
+   *
+   *  Full lock commands a steady-state lateral acceleration of `latLimitG`, so
+   *      maxAngle(v) = wheelbase * latLimitG * g / v^2
+   *  Under about 25 km/h that is wider than the mechanical lock and `maxAngleLow`
+   *  rules; above it, this does. The result is constant-g steering: full lock always
+   *  asks for the same cornering force, at any speed. That is how a real car feels.
+   *
+   *  WHY (the old fade curve was the defect). Grip-limited road-wheel angle vs what
+   *  the old curve handed the player:
+   *
+   *      speed     old rack    grip limit    excess
+   *       60 km/h   25.5 deg     9.3 deg      2.7x
+   *      120 km/h   12.2 deg     2.3 deg      5.2x
+   *      190 km/h    9.5 deg     0.9 deg     10.2x
+   *
+   *  On a gamepad you feel that and back off. On a keyboard every press is full
+   *  lock, so at 120 km/h every corner was a spin request: the front washed out,
+   *  the car left the road inside 0.8s, and lifting off snapped the rear loose.
+   */
+  latLimitG: 1.5,
+  /** Wheelbase, metres. Front axle to rear axle. */
+  wheelbase: 2 * WHEEL.halfBase,
+  /**
+   *  While CATCHING a slide - and only then - the rack re-opens this far, so
+   *  counter-steer is always available. Steering INTO a slide gets no such gift:
+   *  that is how you feed a spin, and the player asking for it is usually a kid
+   *  who just wants to turn.
+   */
   driftAngle: 0.42,
   /** Steering rack slew rate, rad/s. */
   rackRate: 7,
@@ -175,6 +217,15 @@ export const ASSIST = {
   /** Steering input across this band reads as "I meant to do that" and kills the assist. */
   driftIntentLo: 0.15,
   driftIntentHi: 0.55,
+  /**
+   *  ...but only if it is a COUNTER-steer. Steering into a slide earns only this
+   *  fraction of the credit, because it is what a player does when they have lost
+   *  the car, not when they are driving it. Holding a direction through a corner
+   *  must never switch the safety net off.
+   */
+  steerIntoIntent: 0.3,
+  /** Drift angle (rad) below which "counter-steer" is meaningless - there is no slide yet. */
+  counterSteerBeta: 0.12,
 
   /** Air control - deliberately weak. You steer the landing, you don't fly. */
   airPitch: 900,
@@ -222,9 +273,12 @@ export const RPM = {
 }
 
 export const VISUAL = {
-  /** Extra body lean on top of the physics roll, radians per m/s^2. */
-  rollGain: 0.0056,
-  rollMax: 0.075,
+  /** Extra body lean on top of the physics roll, radians per m/s^2.
+   *  Dialled back from 0.0056 / 0.075: the physics body already rolls ~2.5deg, and
+   *  stacking another 4.3deg of stylised lean on top read as the car falling over
+   *  before anything had actually gone wrong. */
+  rollGain: 0.0042,
+  rollMax: 0.055,
   /** Nose lift under power / dive under brakes. */
   pitchGain: 0.006,
   pitchMax: 0.06,

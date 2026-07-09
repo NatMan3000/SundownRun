@@ -112,6 +112,8 @@ const wheelOmega = new Float64Array(WHEEL_COUNT)
 const latSlip = new Float64Array(WHEEL_COUNT)
 const longClip = new Float64Array(WHEEL_COUNT)
 const driving: boolean[] = [false, false, false, false]
+/** Fraction of engine force each wheel receives. Front stays 0 - this car is RWD. */
+const driveShare = new Float64Array(WHEEL_COUNT)
 
 // ---------- helpers ----------
 function clamp(v: number, lo: number, hi: number): number {
@@ -167,6 +169,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     resetPending: false,
     latAccel: 0,
     longAccel: 0,
+    beta: 0,
     massSet: false,
     visRoll: 0,
     visRollVel: 0,
@@ -260,11 +263,30 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     const speed = Math.hypot(_linvel.x, _linvel.z)
     const speedKmh = speed * 3.6
     const vLongCar = _linvel.dot(_fwd)
+    const vLatCar = _linvel.dot(_right)
 
-    // ----- steering: speed sensitive, rack rate limited -----
-    const fade = smoothstep(0, STEERING.fadeSpeed, speed)
-    let limit = STEERING.maxAngleLow + (STEERING.maxAngleHigh - STEERING.maxAngleLow) * fade
-    if (s.drifting) limit = Math.max(limit, STEERING.driftAngle)
+    // Drift angle: + when the car is travelling to its own right, i.e. the nose is
+    // pointing left of where it is actually going. Everything below reads this.
+    const beta = speed > 1.5 ? Math.atan2(vLatCar, vLongCar) : 0
+    s.beta = beta
+
+    // Counter-steering means turning the nose BACK toward the velocity vector. Since
+    // beta > 0 needs a right-hand yaw, and input.steer is positive-right, that is
+    // simply sign(steer) === sign(beta). Steering the other way feeds the slide.
+    const counterSteer =
+      Math.abs(beta) > ASSIST.counterSteerBeta &&
+      Math.abs(input.steer) > 0.15 &&
+      Math.sign(input.steer) === Math.sign(beta)
+
+    // ----- steering: constant-g rack, rate limited -----
+    // Full lock always commands the same lateral acceleration, whatever the speed.
+    // See STEERING.latLimitG - this is the whole fix for "uncontrollable at 120".
+    const gCap =
+      (STEERING.wheelbase * STEERING.latLimitG * 9.81 * CONFIG.steering) /
+      Math.max(speed * speed, 1)
+    let limit = Math.min(STEERING.maxAngleLow, Math.max(STEERING.minAngle, gCap))
+    // The rack re-opens only to CATCH a slide, never to feed one.
+    if (s.drifting && counterSteer) limit = Math.max(limit, STEERING.driftAngle)
     // input.steer is -1..1 with LEFT negative; a positive road-wheel angle steers left.
     const steerTarget = -input.steer * limit
     const maxDelta = STEERING.rackRate * DT
@@ -292,7 +314,6 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     const brakeTotal = DRIVE.brakeForce * CONFIG.brakeStrength
     const brakeFrontWheel = (brakeTotal * DRIVE.brakeFrontBias) / 2
     const brakeRearWheel = (brakeTotal * (1 - DRIVE.brakeFrontBias)) / 2
-    const drivePerRear = engineTotal / 2
     const quarterMass = CHASSIS.mass / 4
 
     // =========================================================
@@ -363,6 +384,19 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       suspForce[3] = clamp(suspForce[3] - dR, 0, SUSPENSION.maxForce)
     }
 
+    // ----- limited-slip diff: feed the torque to where the load is -----
+    // A flat 50/50 split hands the unloaded inside rear as much torque as the loaded
+    // outside one, so mid-corner the inside wheel saturates its friction circle,
+    // spends its lateral grip on spinning, and the tail snaps. Biasing by load makes
+    // that a slide you can feel arriving instead of one that arrives.
+    const rearLoad = suspForce[2] + suspForce[3]
+    const shareRL =
+      rearLoad > 1
+        ? clamp(suspForce[2] / rearLoad, DRIVE.torqueBiasMin, DRIVE.torqueBiasMax)
+        : 0.5
+    driveShare[2] = shareRL
+    driveShare[3] = 1 - shareRL
+
     // =========================================================
     //  PASS C - tyres, friction circle, apply
     // =========================================================
@@ -414,8 +448,9 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       latSlip[i] = clamp((alpha - TYRE.peakSlip) / (TYRE.tailSlip - TYRE.peakSlip), 0, 1)
 
       // ----- longitudinal: drive + brake + rolling resistance -----
-      let fLong = isRear ? drivePerRear : 0
-      driving[i] = isRear && Math.abs(drivePerRear) > 1
+      const driveHere = isRear ? engineTotal * driveShare[i] : 0
+      let fLong = driveHere
+      driving[i] = isRear && Math.abs(driveHere) > 1
 
       const brakeHere = brakeCmd * (isFront ? brakeFrontWheel : brakeRearWheel)
       const hbHere = isRear && input.handbrake ? DRIVE.handbrakeForce : 0
@@ -482,13 +517,14 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
 
     const airborne = groundedCount === 0
 
-    // Does the player MEAN to be sideways? Handbrake down, or a genuine steering
-    // input, says yes - and every assist below stands down. Throttle deliberately
-    // does NOT count: a kid holds throttle permanently, it says nothing about intent.
-    const wantsDrift = Math.max(
-      input.handbrake ? 1 : 0,
-      smoothstep(ASSIST.driftIntentLo, ASSIST.driftIntentHi, Math.abs(input.steer))
-    )
+    // Does the player MEAN to be sideways? The handbrake says yes outright. Steering
+    // says yes ONLY if it is a counter-steer - that is a driver holding a slide.
+    // Steering INTO the slide is a player who has lost the car (or a kid who just
+    // wants to turn and is holding the key down), so the safety net stays mostly on.
+    // Throttle never counts: a kid holds throttle permanently, it says nothing.
+    const steerMag = smoothstep(ASSIST.driftIntentLo, ASSIST.driftIntentHi, Math.abs(input.steer))
+    const steerIntent = counterSteer ? steerMag : steerMag * ASSIST.steerIntoIntent
+    const wantsDrift = Math.max(input.handbrake ? 1 : 0, steerIntent)
     const assistGain = 1 - wantsDrift
 
     // ----- yaw stability: light hand on the tiller; released when the player asks
@@ -509,9 +545,8 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     // Zero while the player is asking for a drift, zero in a reverse manoeuvre,
     // zero in the air, zero below walking pace.
     if (!airborne && !reversing && assistGain > 0.01 && speed > ASSIST.assistSpeedLo) {
-      const vLatCar = _linvel.dot(_right)
-      // + beta = the car is travelling to its own right, so the nose must yaw right.
-      const beta = Math.atan2(vLatCar, vLongCar)
+      // `beta` was measured at the top of the step: + means the car is travelling to
+      // its own right, so the nose must yaw right to line back up.
       const mag = Math.abs(beta)
       if (mag > ASSIST.driftDeadband) {
         const over = Math.sign(beta) * Math.min(mag - ASSIST.driftDeadband, 1.2)

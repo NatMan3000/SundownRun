@@ -8,6 +8,7 @@
 export const CONFIG = {
   // ---------- YOUR CAR ----------
   carColor: '#1FA8C9', // try '#E8402A' (lava red) or '#8A2BE2' (purple)
+  carBody: 'coupe' as 'coupe' | 'striker' | 'muscle' | 'wedge', // pick your ride!
   carName: 'Sundown GT',
 
   // ---------- HANDLING ----------

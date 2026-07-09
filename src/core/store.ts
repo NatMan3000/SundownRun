@@ -1,4 +1,20 @@
 import { create } from 'zustand'
+import { CONFIG } from './config'
+
+export type CarBodyId = 'coupe' | 'striker' | 'muscle' | 'wedge'
+export const CAR_BODIES: readonly CarBodyId[] = ['coupe', 'striker', 'muscle', 'wedge']
+
+const CAR_BODY_KEY = 'sundown-run.carBody'
+
+function loadCarBody(): CarBodyId {
+  try {
+    const v = localStorage.getItem(CAR_BODY_KEY)
+    if (v && (CAR_BODIES as readonly string[]).includes(v)) return v as CarBodyId
+  } catch {
+    // storage unavailable (private mode) - fall through to config default
+  }
+  return CONFIG.carBody
+}
 
 // Low-frequency game state (React-reactive). Per-frame values live in
 // core/telemetry.ts instead - never put a number that changes every frame here.
@@ -8,6 +24,10 @@ export type InputDevice = 'keyboard' | 'gamepad'
 interface GameStore {
   inputDevice: InputDevice
   setInputDevice: (d: InputDevice) => void
+
+  // car selection (runtime - the title-screen garage; CONFIG.carBody is the default)
+  carBody: CarBodyId
+  setCarBody: (b: CarBodyId) => void
 
   // delights
   collectiblesTotal: number
@@ -40,6 +60,16 @@ interface GameStore {
 export const useGameStore = create<GameStore>((set) => ({
   inputDevice: 'keyboard',
   setInputDevice: (d) => set((s) => (s.inputDevice === d ? s : { inputDevice: d })),
+
+  carBody: loadCarBody(),
+  setCarBody: (b) => {
+    try {
+      localStorage.setItem(CAR_BODY_KEY, b)
+    } catch {
+      // fine - selection just won't survive a reload
+    }
+    set({ carBody: b })
+  },
 
   collectiblesTotal: 0,
   collectiblesFound: 0,
