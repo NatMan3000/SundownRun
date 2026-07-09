@@ -248,15 +248,17 @@ export function IntroCard() {
         </div>
         {/* Steering sensitivity, same row grammar as the car above it. */}
         <div className="intro__garage intro__garage--steer">
+          {/* The keyboard binding is ArrowDown/ArrowUp, so the buttons point
+              that way too. Same glyph as the car row, rotated by CSS. */}
           <div
-            className="intro__chev intro__chev--pm"
+            className="intro__chev intro__chev--vert intro__chev--down"
             role="button"
             tabIndex={-1}
             aria-label="calmer steering"
             onPointerDown={nudge(-1)}
             onTouchStart={swallow}
           >
-            &minus;
+            <span className="intro__chevrot">&lsaquo;</span>
           </div>
 
           <div className="intro__steer">
@@ -275,14 +277,14 @@ export function IntroCard() {
           </div>
 
           <div
-            className="intro__chev intro__chev--pm"
+            className="intro__chev intro__chev--vert intro__chev--up"
             role="button"
             tabIndex={-1}
             aria-label="twitchier steering"
             onPointerDown={nudge(1)}
             onTouchStart={swallow}
           >
-            +
+            <span className="intro__chevrot">&lsaquo;</span>
           </div>
         </div>
 

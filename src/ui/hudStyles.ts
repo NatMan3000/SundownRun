@@ -454,7 +454,22 @@ html[data-intro] .hud-hint { opacity: 0; }
 
 /* same row grammar as the car selector, so the chevrons line up vertically */
 .intro__garage--steer { margin-top: 20px; }
-.intro__chev--pm { font-size: 17px; padding-bottom: 1px; }
+
+/* Same circle as the car row's chevrons, glyph rotated to point up / down.
+   The rotation lives on an inner span so the circle's hover scale() and the
+   glyph's rotate() do not fight over one transform property.
+   '&lsaquo;' points left: rotate(-90deg) aims it down, rotate(90deg) aims it up. */
+.intro__chev--vert {
+  font-size: 19px;
+  padding-bottom: 0;
+}
+.intro__chevrot {
+  display: block;
+  line-height: 1;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.intro__chev--down .intro__chevrot { transform: rotate(-90deg); }
+.intro__chev--up .intro__chevrot { transform: rotate(90deg); }
 
 .intro__steer { min-width: 250px; }
 .intro__steername {
