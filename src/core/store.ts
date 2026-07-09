@@ -15,11 +15,22 @@ interface GameStore {
   setCollectiblesTotal: (n: number) => void
   foundCollectible: () => void
 
-  // lap timing (road is a closed loop)
+  // lap timing (road is a closed loop). A lap only completes if the ordered
+  // sector checkpoints were all hit (anti tiny-circle / reverse cheat). A lap
+  // with too much cumulative off-road time is "dirty": its time shows, but it
+  // can never set bestLapMs (anti course-cut cheat, while off-road exploring
+  // stays legal and unpunished).
   lapCount: number
   lastLapMs: number | null
+  lastLapDirty: boolean
   bestLapMs: number | null
-  completeLap: (ms: number) => void
+  /** live flag for the HUD: the lap in progress has gone dirty */
+  currentLapDirty: boolean
+  setCurrentLapDirty: (d: boolean) => void
+  /** bumped when a line-crossing is rejected for skipped sectors (HUD toast) */
+  lapVoidNonce: number
+  voidLap: () => void
+  completeLap: (ms: number, dirty: boolean) => void
 
   // reset-to-road signal: vehicle watches the nonce and teleports on change
   resetNonce: number
@@ -37,12 +48,19 @@ export const useGameStore = create<GameStore>((set) => ({
 
   lapCount: 0,
   lastLapMs: null,
+  lastLapDirty: false,
   bestLapMs: null,
-  completeLap: (ms) =>
+  currentLapDirty: false,
+  setCurrentLapDirty: (d) => set((s) => (s.currentLapDirty === d ? s : { currentLapDirty: d })),
+  lapVoidNonce: 0,
+  voidLap: () => set((s) => ({ lapVoidNonce: s.lapVoidNonce + 1, currentLapDirty: false })),
+  completeLap: (ms, dirty) =>
     set((s) => ({
       lapCount: s.lapCount + 1,
       lastLapMs: ms,
-      bestLapMs: s.bestLapMs === null || ms < s.bestLapMs ? ms : s.bestLapMs,
+      lastLapDirty: dirty,
+      currentLapDirty: false,
+      bestLapMs: dirty ? s.bestLapMs : s.bestLapMs === null || ms < s.bestLapMs ? ms : s.bestLapMs,
     })),
 
   resetNonce: 0,

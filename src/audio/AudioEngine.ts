@@ -114,10 +114,16 @@ const dbg = {
   chimes: 0,
   laps: 0,
   landings: 0,
+  voids: 0,
 }
 
 export type AudioDebug = typeof dbg
 
+/**
+ * A COPY, deliberately. `dbg` is a long-lived mutable singleton; handing it out
+ * directly means a probe that stashes `const before = snapshot()` is holding a
+ * live reference and every later diff reads zero.
+ */
 export function debug(): AudioDebug {
   dbg.contextState = G ? G.ctx.state : 'none'
   dbg.running = isRunning()
@@ -130,7 +136,7 @@ export function debug(): AudioDebug {
     dbg.windGain = G.windGain.gain.value
     dbg.roadGain = G.roadGain.gain.value
   }
-  return dbg
+  return { ...dbg }
 }
 
 // ---------- lifecycle ----------
@@ -600,6 +606,21 @@ export function playLap(best: boolean): void {
     tone('sine', root / 4, t, 0.16, 0.9) //   two octaves down: the weight of a record
     tone('sine', root * 2, t + 0.3, 0.05, 1.1) // a held sparkle over the top
   }
+}
+
+/**
+ * Lap rejected for skipped sectors. Deliberately NOT a buzzer: two flat notes
+ * falling a minor third, soft and short. It reads as a shrug, not a telling-off -
+ * the lap flourish is what you want back, and its absence is the whole message.
+ */
+export function playVoid(): void {
+  const g = G
+  if (!g) return
+  const t = g.ctx.currentTime + 0.002
+  dbg.voids++
+  tone('triangle', 392.0, t, 0.15, 0.13) //         G4
+  tone('triangle', 329.63, t + 0.11, 0.15, 0.28) // E4
+  noiseBurst(0.04, 650, 0.7, 0.08)
 }
 
 /** Wheels back on the ground after a jump. `intensity` 0..1 from air time. */

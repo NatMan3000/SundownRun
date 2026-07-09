@@ -13,6 +13,7 @@ export const HUD_CSS = `
   font-family: var(--hud-font);
   -webkit-font-smoothing: antialiased;
   --amber: var(--hud-amber, #FFB35C);
+  --amber-dim: #D6994F;
   --panel: rgba(26, 20, 16, 0.42);
   --edge: rgba(255, 179, 92, 0.16);
 }
@@ -52,6 +53,12 @@ html[data-intro] .hud-hint { opacity: 0; }
   text-transform: uppercase;
   opacity: 0.55;
 }
+.hud-lap__clockrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
 .hud-lap__clock {
   font-size: 27px;
   font-weight: 300;
@@ -59,6 +66,38 @@ html[data-intro] .hud-hint { opacity: 0; }
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
+  transition: color 220ms ease;
+}
+/* the lap in progress has gone off-road: it still counts, it just cannot win */
+.hud-lap__clock--dirty { color: var(--amber-dim); }
+
+/* ---------------- off-road tag ---------------- */
+
+.hud-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 179, 92, 0.38);
+  background: rgba(255, 179, 92, 0.1);
+  color: var(--amber);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* always mounted, so the panel never resizes underneath the numbers */
+  opacity: 0;
+  transform: translateY(-3px) scale(0.94);
+  transition: opacity 200ms ease, transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.hud-tag--on { opacity: 1; transform: none; }
+.hud-tag--mini {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 8px;
+  letter-spacing: 0.12em;
 }
 .hud-lap__rows {
   margin-top: 7px;
@@ -81,8 +120,13 @@ html[data-intro] .hud-hint { opacity: 0; }
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   font-size: 12px;
+  /* '-:--.---' and '1:30.000' are both 8 chars but only digits are tabular,
+     so pin the column or the panel jumps the first time a lap completes */
+  min-width: 8ch;
+  text-align: right;
 }
 .hud-lap__row b.amber { color: var(--amber); }
+.hud-lap__row b.dirty { color: var(--amber-dim); }
 
 /* ---------------- shard counter (top-right) ---------------- */
 
@@ -190,6 +234,11 @@ html[data-intro] .hud-hint { opacity: 0; }
   background: linear-gradient(180deg, #FFE0B0, var(--amber));
   border-color: rgba(255, 220, 170, 0.7);
   box-shadow: 0 6px 30px rgba(255, 160, 60, 0.35);
+}
+/* a note, not a telling-off */
+.hud-toast--void {
+  color: var(--amber);
+  border-color: rgba(255, 179, 92, 0.34);
 }
 @keyframes toastIn {
   from { opacity: 0; transform: translate(-50%, 12px) scale(0.94); }

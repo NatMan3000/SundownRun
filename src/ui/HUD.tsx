@@ -45,6 +45,15 @@ interface Toast {
   id: number
   text: string
   gold: boolean
+  /** 'void' tints the toast amber - a note, not a celebration */
+  variant?: 'void'
+}
+
+declare global {
+  interface Window {
+    /** Dev probe: the live store the HUD is actually subscribed to. */
+    __hud?: { store: typeof useGameStore }
+  }
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -54,6 +63,8 @@ function clamp(v: number, lo: number, hi: number): number {
 export function HUD() {
   const lapCount = useGameStore((s) => s.lapCount)
   const lastLapMs = useGameStore((s) => s.lastLapMs)
+  const lastLapDirty = useGameStore((s) => s.lastLapDirty)
+  const currentLapDirty = useGameStore((s) => s.currentLapDirty)
   const bestLapMs = useGameStore((s) => s.bestLapMs)
   const found = useGameStore((s) => s.collectiblesFound)
   const total = useGameStore((s) => s.collectiblesTotal)
@@ -68,9 +79,10 @@ export function HUD() {
   const toastId = useRef(0)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const showToast = useCallback((text: string, gold = false) => {
+  // Single slot, last wins - toasts replace, they never stack.
+  const showToast = useCallback((text: string, gold = false, variant?: 'void') => {
     if (toastTimer.current !== null) clearTimeout(toastTimer.current)
-    setToast({ id: ++toastId.current, text, gold })
+    setToast({ id: ++toastId.current, text, gold, variant })
     toastTimer.current = setTimeout(() => {
       toastTimer.current = null
       setToast(null)
@@ -194,12 +206,19 @@ export function HUD() {
     () =>
       useGameStore.subscribe((s, prev) => {
         if (s.lapCount !== prev.lapCount && s.lastLapMs !== null) {
-          const best = s.bestLapMs !== null && s.lastLapMs <= s.bestLapMs
+          // A dirty lap can be quicker than the record and still not BE the
+          // record - bestLapMs never moved. Gate on the flag, not on the time.
+          const best = !s.lastLapDirty && s.bestLapMs !== null && s.lastLapMs <= s.bestLapMs
           audio.playLap(best)
           showToast(
             best ? `BEST LAP  ${formatLap(s.lastLapMs)}` : `LAP ${s.lapCount}  ${formatLap(s.lastLapMs)}`,
             best
           )
+        }
+        // Line crossed without hitting every sector: the lap does not count.
+        if (s.lapVoidNonce !== prev.lapVoidNonce) {
+          audio.playVoid()
+          showToast('LAP VOID - missed the track!', false, 'void')
         }
         if (
           s.collectiblesFound !== prev.collectiblesFound &&
@@ -216,6 +235,13 @@ export function HUD() {
     [showToast]
   )
 
+  useEffect(() => {
+    window.__hud = { store: useGameStore }
+    return () => {
+      delete window.__hud
+    }
+  }, [])
+
   useEffect(() => () => { if (toastTimer.current !== null) clearTimeout(toastTimer.current) }, [])
 
   return (
@@ -224,13 +250,30 @@ export function HUD() {
 
       <div className={`hud-panel hud-lap${CONFIG.showFps ? ' hud-lap--fps' : ''}`}>
         <div className="hud-lap__label">LAP {lapCount + 1}</div>
-        <div className="hud-lap__clock" ref={clockRef}>
-          0:00.000
+        {/* Off-road play is legal - it just cannot set a record. Amber, not red.
+            Both tags stay mounted and fade: mounting them would jump the panel
+            width, and nothing in this HUD is allowed to pop. */}
+        <div className="hud-lap__clockrow">
+          <div
+            className={`hud-lap__clock${currentLapDirty ? ' hud-lap__clock--dirty' : ''}`}
+            ref={clockRef}
+          >
+            0:00.000
+          </div>
+          <span className={`hud-tag${currentLapDirty ? ' hud-tag--on' : ''}`} aria-hidden={!currentLapDirty}>
+            OFF ROAD
+          </span>
         </div>
         <div className="hud-lap__rows">
           <div className="hud-lap__row">
             <span>LAST</span>
-            <b>{formatLap(lastLapMs)}</b>
+            <i
+              className={`hud-tag hud-tag--mini${lastLapDirty ? ' hud-tag--on' : ''}`}
+              aria-hidden={!lastLapDirty}
+            >
+              OFF ROAD
+            </i>
+            <b className={lastLapDirty ? 'dirty' : undefined}>{formatLap(lastLapMs)}</b>
           </div>
           <div className="hud-lap__row">
             <span>BEST</span>
@@ -260,7 +303,12 @@ export function HUD() {
       </div>
 
       {toast && (
-        <div key={toast.id} className={`hud-toast${toast.gold ? ' hud-toast--gold' : ''}`}>
+        <div
+          key={toast.id}
+          className={`hud-toast${toast.gold ? ' hud-toast--gold' : ''}${
+            toast.variant === 'void' ? ' hud-toast--void' : ''
+          }`}
+        >
           {toast.text}
         </div>
       )}
