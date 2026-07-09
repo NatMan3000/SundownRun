@@ -146,8 +146,30 @@ export function buildProfile(s: BodySpec): THREE.Shape {
   return new THREE.Shape(p)
 }
 
+/**
+ * How far the glass core's roof line sits BELOW the painted roof band's.
+ *
+ * Every variant's `roof` band was authored by copying the `glass` roof points -
+ * so the band's top face and the glass core's top face were the same plane,
+ * separated only in x. Two coplanar surfaces do not take turns: the depth test
+ * resolves them per-pixel, per-frame, and the roof shimmers with a black moire.
+ *
+ * The cure is separation, not polygonOffset: the band's top edge stays exactly
+ * where it was (it IS the visible roofline), and the glass ducks 18 mm under it.
+ * Enough that nothing can ever tie; small enough that the 38 mm the band already
+ * reaches down still buries its underside inside the glass.
+ */
+export const GLASS_ROOF_DROP = 0.018
+
 export function buildGlassShape(s: BodySpec): THREE.Shape {
-  return new THREE.Shape(s.glass)
+  // The first and last points are the cowl and the backlight base: they sit down
+  // inside the body's beltline and must not move. Everything between them is
+  // the cabin's top line, and it drops.
+  const last = s.glass.length - 1
+  const pts = s.glass.map((p, i) =>
+    i === 0 || i === last ? p : v2(p.x, p.y - GLASS_ROOF_DROP)
+  )
+  return new THREE.Shape(pts)
 }
 
 export function buildRoofShape(s: BodySpec): THREE.Shape {
@@ -260,7 +282,7 @@ const striker: BodySpec = {
 
   glassHalf: 0.765,
   roofHalf: 0.8,
-  glass: [v2(1.3, 0.36), v2(0.85, 0.655), v2(0.2, 0.685), v2(-0.35, 0.678), v2(-0.85, 0.4)],
+  glass: [v2(1.3, 0.338), v2(0.85, 0.655), v2(0.2, 0.685), v2(-0.35, 0.678), v2(-0.85, 0.378)],
   roof: [
     v2(-0.35, 0.618),
     v2(0.2, 0.625),
@@ -274,7 +296,8 @@ const striker: BodySpec = {
     { z0: -0.37, y0: 0.665, z1: -0.84, y1: 0.415, thick: 0.085, width: 0.1, x: 0.778 },
   ],
   mirror: { x: 0.9, y: 0.42, z: 1.1 },
-  spoiler: { w: 1.3, h: 0.045, d: 0.22, x: 0, y: 0.712, z: -0.44, rx: -0.14 },
+  // seated INTO the band's rear end, not resting on its top plane
+  spoiler: { w: 1.3, h: 0.045, d: 0.24, x: 0, y: 0.697, z: -0.4, rx: -0.14 },
 
   grille: { w: 1.48, h: 0.2, d: 0.03, x: 0, y: -0.03, z: 1.892, rx: -0.114 },
   intake: { w: 1.06, h: 0.075, d: 0.03, x: 0, y: -0.185, z: 1.885, rx: -0.114 },
