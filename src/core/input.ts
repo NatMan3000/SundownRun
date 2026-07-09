@@ -93,7 +93,15 @@ function steeringKnob(): number {
 const keys = { fwd: false, back: false, left: false, right: false, hand: false }
 let device: 'keyboard' | 'gamepad' = 'keyboard'
 let padResetPrev = false
+let padCamPrev = false
 let mounted = 0
+
+/**
+ * Camera-cycle requests. Bumped on a rising edge only - C on the keyboard, RB on the
+ * pad - so holding the button cycles once, not sixty times a second. The chase camera
+ * owns the actual mode; input only ever says "next".
+ */
+export const cameraSignal = { cycleNonce: 0 }
 
 function setDevice(d: 'keyboard' | 'gamepad') {
   if (device === d) return
@@ -150,6 +158,10 @@ function onKeyDown(e: KeyboardEvent) {
       break
     case 'KeyR':
       useGameStore.getState().requestReset()
+      break
+    case 'KeyC':
+      // `e.repeat` is filtered at the top, so holding C cycles exactly once.
+      cameraSignal.cycleNonce++
       break
     default:
       handled = false
@@ -248,6 +260,7 @@ export function updateInput(dt: number): void {
     input.brake = approach(input.brake, clamp01(inputOverride.brake), ANALOG_RATE, dt)
     input.steer = approach(input.steer, clampSteer(inputOverride.steer), ANALOG_RATE, dt)
     input.handbrake = inputOverride.handbrake
+    sanitise()
     return
   }
 
@@ -256,12 +269,17 @@ export function updateInput(dt: number): void {
   if (pad && padIsActive(pad)) setDevice('gamepad')
 
   if (pad) {
-    // Reset is an edge, and works regardless of which device "owns" the car.
+    // Reset and camera are edges, and work regardless of which device "owns" the car.
     const y = pad.buttons[3]?.pressed ?? false
     if (y && !padResetPrev) useGameStore.getState().requestReset()
     padResetPrev = y
+
+    const rb = pad.buttons[5]?.pressed ?? false
+    if (rb && !padCamPrev) cameraSignal.cycleNonce++
+    padCamPrev = rb
   } else {
     padResetPrev = false
+    padCamPrev = false
     if (device === 'gamepad') setDevice('keyboard')
   }
 
@@ -274,14 +292,21 @@ export function updateInput(dt: number): void {
     input.throttle = approach(input.throttle, rawThrottle, ANALOG_RATE, dt)
     input.brake = approach(input.brake, rawBrake, ANALOG_RATE, dt)
     input.handbrake = pad.buttons[0]?.pressed ?? false
+    sanitise()
     return
   }
 
   // 3. Keyboard - digital in, analog out.
   const dir = (keys.left ? -1 : 0) + (keys.right ? 1 : 0)
   // How hard to tame: 0 at parking speed, 1 at 120 km/h. The knob buys some back.
+  //
+  // `speedKmh` is read back out of telemetry, which the vehicle writes from the
+  // physics body. That closes a loop - input -> forces -> velocity -> speed -> input -
+  // so a single NaN anywhere in it would latch here forever (approach() never returns
+  // from NaN). Treat a non-finite speed as zero and let the physics side recover.
   const knob = steeringKnob()
-  const tame = smoothstep(KB_TAME_LO_KMH, KB_TAME_HI_KMH, telemetry.speedKmh) / knob
+  const spdKmh = Number.isFinite(telemetry.speedKmh) ? telemetry.speedKmh : 0
+  const tame = smoothstep(KB_TAME_LO_KMH, KB_TAME_HI_KMH, spdKmh) / knob
   const authority = 1 - KB_AUTHORITY_DROP * Math.min(tame, 1)
   const steerTarget = dir * authority
 
@@ -308,6 +333,18 @@ export function updateInput(dt: number): void {
   input.brake = approach(input.brake, brakeTarget, brakeTarget > 0 ? BRAKE_ATTACK : BRAKE_RELEASE, dt)
 
   input.handbrake = keys.hand
+  sanitise()
+}
+
+/**
+ * `approach()` is an exponential filter: once any of these holds NaN it holds it
+ * forever, and the vehicle would hand that NaN straight to rapier. Nothing leaves
+ * this module non-finite.
+ */
+function sanitise(): void {
+  if (!Number.isFinite(input.steer)) input.steer = 0
+  if (!Number.isFinite(input.throttle)) input.throttle = 0
+  if (!Number.isFinite(input.brake)) input.brake = 0
 }
 
 function clamp01(v: number): number {

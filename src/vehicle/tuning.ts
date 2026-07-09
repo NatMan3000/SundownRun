@@ -247,6 +247,21 @@ export const STATE = {
   /** Reset guards. */
   fallY: -50,
   upsideDownSeconds: 3,
+  /**
+   *  TUNNELLING GUARD. Rapier heightfields are infinitely thin, so a car descending
+   *  faster than roughly 28 m/s can pass straight through one between two steps.
+   *  Unreachable with stock CONFIG, but a kid winding `topSpeedKmh` up can get there,
+   *  and the world's catch floor 25 m below then holds them ~45 m under the terrain
+   *  with no way back. So: if the car is this far BELOW the terrain surface for this
+   *  long, put it back on the road.
+   *
+   *  Depth, not just `fallY`: the terrain runs from below sea level to +140 m, and a
+   *  single absolute floor cannot tell "deep in a valley" from "under the world".
+   */
+  belowTerrainDepth: 8,
+  belowTerrainSeconds: 0.5,
+  /** getTerrainHeight is O(n) and allocates. 4Hz is plenty to catch a tunnel. */
+  belowTerrainEverySteps: 15,
   /** Road / lap queries are O(2048) and allocate - run them at 12Hz, not 60. */
   roadQueryEverySteps: 5,
 }

@@ -32,7 +32,7 @@ import { CONFIG } from '../core/config'
 import { telemetry } from '../core/telemetry'
 import { useGameStore } from '../core/store'
 import { initInput, input, updateInput } from '../core/input'
-import { ROAD_WIDTH, nearestRoadPoint } from '../core/terrain'
+import { ROAD_WIDTH, getSpawn, getTerrainHeight, nearestRoadPoint } from '../core/terrain'
 
 import { carVisual } from './carVisual'
 import type { CarBodyHandle } from './carVisual'
@@ -127,6 +127,23 @@ function approach(cur: number, target: number, rate: number, dt: number): number
   return cur + (target - cur) * (1 - Math.exp(-rate * dt))
 }
 
+// ---------- the NaN firewall ----------
+// A single non-finite number handed to rapier panics the WASM ("RuntimeError:
+// unreachable"). The panic unwinds with a Rust RefCell still borrowed, so EVERY
+// subsequent rapier call then throws "recursive use of an object detected which
+// would lead to unsafe aliasing in rust" - once per step, forever. The car freezes
+// and telemetry reads NaN. It is unrecoverable and it buries its own cause.
+//
+// So nothing crosses into rapier unchecked. A bad value is loud (console.error,
+// once) and recoverable (teleport back to the road) rather than fatal - the
+// accountable-writes rule: a failed write must be visible, never silent.
+function finite(x: number): boolean {
+  return Number.isFinite(x)
+}
+function finiteV(v: THREE.Vector3): boolean {
+  return finite(v.x) && finite(v.y) && finite(v.z)
+}
+
 /**
  * Normalised lateral grip vs slip angle. Rises linearly to 1.0 at the peak,
  * then eases DOWN to `slideFrac`. Past the peak, more angle = less grip:
@@ -170,6 +187,8 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     latAccel: 0,
     longAccel: 0,
     beta: 0,
+    nanReported: false,
+    belowTerrainTimer: 0,
     massSet: false,
     visRoll: 0,
     visRollVel: 0,
@@ -223,11 +242,12 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
 
     if (s.resetPending) {
       s.resetPending = false
-      teleportToRoad(body)
+      teleportToRoad(body, s)
       lap.onTeleport(performance.now())
       vehicleSignals.resetTick++
       s.settleSteps = 4 // suppress the impact detector while the solver settles
       s.uprightTimer = 0
+      s.belowTerrainTimer = 0
       telemetry.impact = 0
       return
     }
@@ -244,6 +264,17 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     _linvel.set(lv.x, lv.y, lv.z)
     _angvel.set(av.x, av.y, av.z)
     _com.set(cm.x, cm.y, cm.z)
+
+    // The body itself has gone non-finite - something upstream (a NaN force, a NaN
+    // terrain sample) already poisoned it. Recover before we feed it back to rapier.
+    if (!finiteV(_pos) || !finiteV(_linvel) || !finiteV(_angvel) || !finite(_q.w)) {
+      reportNaN(s, 'body state')
+      teleportToRoad(body, s)
+      vehicleSignals.resetTick++
+      s.settleSteps = 4
+      telemetry.impact = 0
+      return
+    }
 
     // Chassis basis. +Z forward, +Y up, +X the car's LEFT, so right = -X.
     _fwd.set(0, 0, 1).applyQuaternion(_q)
@@ -485,6 +516,13 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       _tmp.set(0, 0, 0).addScaledVector(wheelFwds[i], fLong).addScaledVector(wheelRights[i], fLat)
       _tyreSum.add(_tmp)
 
+      // Last gate before rapier. A non-finite force here would panic the WASM.
+      if (!finiteV(_force) || !finiteV(contactPts[i])) {
+        reportNaN(s, `wheel ${i} force`)
+        s.resetPending = true
+        continue
+      }
+
       _rv.x = _force.x
       _rv.y = _force.y
       _rv.z = _force.z
@@ -656,6 +694,31 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       s.uprightTimer = 0
     }
 
+    // ----- auto reset: tunnelled THROUGH the terrain -----
+    // Rapier heightfields are infinitely thin. A fast enough descent skips the
+    // surface between two steps and the car ends up under the world, sat on the
+    // catch floor, stuck. Sampled at 4Hz because getTerrainHeight is O(n) and
+    // allocates; sustained for half a second so a legitimate dip under an
+    // overhanging rock or a bridge cannot trip it.
+    if (s.stepCount % STATE.belowTerrainEverySteps === 0) {
+      const ground = getTerrainHeight(_pos.x, _pos.z)
+      const buried = finite(ground) && _pos.y < ground - STATE.belowTerrainDepth
+      if (buried) {
+        s.belowTerrainTimer += (STATE.belowTerrainEverySteps * 1) / 60
+        if (s.belowTerrainTimer >= STATE.belowTerrainSeconds) {
+          if (import.meta.env.DEV) {
+            console.info(
+              `[vehicle] below terrain by ${(ground - _pos.y).toFixed(1)}m - tunnelled through the heightfield, resetting`
+            )
+          }
+          s.resetPending = true
+          s.belowTerrainTimer = 0
+        }
+      } else {
+        s.belowTerrainTimer = 0
+      }
+    }
+
     if (import.meta.env.DEV && s.stepCount === 3) {
       // Mass properties only land after rapier's first step, so report them here.
       const cm0 = body.worldCom()
@@ -748,16 +811,48 @@ function updateGearAndRpm(
 }
 
 // ---------- reset ----------
-function teleportToRoad(body: RapierRigidBody) {
-  const t = body.translation()
-  const rp = nearestRoadPoint(t.x, t.z)
+/** Loud once, never per-step: 60 identical errors a second bury their own cause. */
+function reportNaN(s: { nanReported: boolean }, where: string) {
+  if (s.nanReported) return
+  s.nanReported = true
+  console.error(
+    `[vehicle] non-finite value at "${where}" - refusing to hand it to rapier, resetting to the road. ` +
+      `Left unchecked this panics the physics WASM and every later call throws "recursive use of an object".`
+  )
+}
 
-  _rp.x = rp.point.x
-  _rp.y = rp.point.y + 1.0
-  _rp.z = rp.point.z
+function teleportToRoad(body: RapierRigidBody, s?: { nanReported: boolean }) {
+  const t = body.translation()
+  // A poisoned body gives a poisoned query. Fall back to the spawn, which is a
+  // constant and cannot be NaN.
+  const usable = finite(t.x) && finite(t.z)
+  const rp = usable ? nearestRoadPoint(t.x, t.z) : null
+
+  let px: number, py: number, pz: number, yaw: number
+  if (rp && finiteV(rp.point) && finiteV(rp.tangent)) {
+    px = rp.point.x
+    py = rp.point.y + 1.0
+    pz = rp.point.z
+    yaw = Math.atan2(rp.tangent.x, rp.tangent.z)
+  } else {
+    if (s) reportNaN(s, 'nearestRoadPoint')
+    const spawn = getSpawn()
+    px = spawn.position.x
+    py = spawn.position.y
+    pz = spawn.position.z
+    yaw = spawn.rotationY
+  }
+
+  // If even that is not finite there is nothing sane left to do; leave the body
+  // alone rather than panic the WASM.
+  if (!finite(px) || !finite(py) || !finite(pz) || !finite(yaw)) return
+
+  _rp.x = px
+  _rp.y = py
+  _rp.z = pz
   body.setTranslation(_rp, true)
 
-  _q.setFromAxisAngle(AXIS_Y, Math.atan2(rp.tangent.x, rp.tangent.z))
+  _q.setFromAxisAngle(AXIS_Y, yaw)
   body.setRotation(_q, true)
 
   _rv.x = 0

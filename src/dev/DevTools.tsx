@@ -16,6 +16,7 @@ import { telemetry } from '../core/telemetry'
 import { getTerrainHeight } from '../core/terrain'
 import { useGameStore } from '../core/store'
 import { carVisual } from '../vehicle/carVisual'
+import { cameraState } from '../vehicle/cameraMode'
 import { lapState } from '../vehicle/lapTracker'
 import { DemoDrive } from './DemoDrive'
 
@@ -52,6 +53,12 @@ declare global {
       readonly lapArmed: boolean
       /** Live vertical FOV of the chase camera, degrees. */
       readonly fov: number
+      /** Active camera mode: 'chase' | 'close' | 'bonnet'. Cycled with C / RB. */
+      readonly cameraMode: string
+      /** 0..1 progress of the ease between modes; 1 = settled. */
+      readonly cameraTransition: number
+      /** Live world position of the camera - lets a checker prove it never snaps. */
+      readonly cameraPos: [number, number, number]
     }
     __perf?: {
       running: boolean
@@ -170,6 +177,15 @@ export function DevTools() {
       },
       get fov() {
         return (camera as THREE.PerspectiveCamera).fov
+      },
+      get cameraMode() {
+        return cameraState.mode
+      },
+      get cameraTransition() {
+        return cameraState.transition
+      },
+      get cameraPos(): [number, number, number] {
+        return [camera.position.x, camera.position.y, camera.position.z]
       },
     }
     return () => {
