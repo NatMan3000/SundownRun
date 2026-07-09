@@ -66,7 +66,7 @@ export const TYRE = {
    *  SLIP CURVE. Lateral grip vs slip angle (rad), normalised 0..1 of mu:
    *
    *      1.0 |      /\_
-   *          |     /   \____   <- slide plateau (0.66)
+   *          |     /   \____   <- slide plateau
    *          |    /
    *      0.0 |___/________________  slip angle
    *             ^peak      ^tail
@@ -79,7 +79,29 @@ export const TYRE = {
    */
   peakSlip: 0.13,
   tailSlip: 0.6,
-  slideFrac: 0.66,
+  /**
+   *  THE PLATEAUS ARE NOT EQUAL, AND THAT IS THE WHOLE STABILITY STORY.
+   *
+   *  Yaw moment on a symmetric wheelbase is L * (F_front - F_rear). At the PEAK
+   *  the rear lets go first (muRear 1.50 < muFront 1.62), so the car rotates
+   *  eagerly into a slide - that is the fun. But if both axles then saturated at
+   *  the same plateau, the front would keep out-gripping the rear at EVERY angle
+   *  and the yaw moment would never change sign: the spin feeds itself all the
+   *  way to 180deg with the player's hands off the wheel. That was defect D1.
+   *
+   *  So the rear holds a HIGHER plateau than the front. Authority inverts:
+   *
+   *      slip angle  <20deg  ->  front grips harder  ->  car rotates in  (oversteer, fun)
+   *      slip angle  >20deg  ->  rear  grips harder  ->  car straightens  (catchable)
+   *
+   *      crossover where curveRear*muRear == curveFront*muFront, i.e. ~20deg.
+   *
+   *  Physically defensible too - a RWD car runs wider, stickier rear tyres.
+   *  A sustained drift still works because the handbrake (or throttle, via the
+   *  friction circle) attacks muRear directly and takes the rear's authority away.
+   */
+  slideFrontFrac: 0.6,
+  slideRearFrac: 0.7,
   /** Handbrake multiplies rear mu by this - the rear steps out on command. */
   handbrakeGrip: 0.3,
   /** Rolling resistance as a fraction of vertical load. */
@@ -126,9 +148,34 @@ export const STEERING = {
 }
 
 export const ASSIST = {
-  /** Yaw damping torque, Nm per rad/s. Slashed while drifting so the slide stays alive. */
+  /** Yaw damping torque, Nm per rad/s. */
   yawDamp: 800,
+  /** Slashed while the player is ASKING for a slide, so the drift stays alive. */
   yawDampDrift: 250,
+  /** Raised while the car is sliding and the player has let go of everything. */
+  yawDampRecover: 1600,
+
+  /**
+   *  DRIFT RECOVERY - the hand that catches the car.
+   *
+   *  A restoring torque toward the velocity vector, Nm per radian of drift angle.
+   *  It fades to ZERO the moment the player asks for a slide (handbrake down, or
+   *  a real steering input), so a deliberate drift never feels like it is being
+   *  fought. With every input released it is what a driver's hands would be doing
+   *  - and the player here is a 12-year-old on a digital keyboard who has not
+   *  learned to counter-steer yet.
+   */
+  driftRestore: 2900,
+  driftRestoreMax: 3600,
+  /** Drift angle (rad) inside which nothing is applied - normal cornering is untouched. */
+  driftDeadband: 0.09,
+  /** Assist ramps in across this speed band (m/s). Nothing at parking pace. */
+  assistSpeedLo: 2.5,
+  assistSpeedHi: 8,
+  /** Steering input across this band reads as "I meant to do that" and kills the assist. */
+  driftIntentLo: 0.15,
+  driftIntentHi: 0.55,
+
   /** Air control - deliberately weak. You steer the landing, you don't fly. */
   airPitch: 900,
   airYaw: 700,

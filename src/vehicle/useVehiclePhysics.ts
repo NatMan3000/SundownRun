@@ -127,16 +127,19 @@ function approach(cur: number, target: number, rate: number, dt: number): number
 
 /**
  * Normalised lateral grip vs slip angle. Rises linearly to 1.0 at the peak,
- * then eases DOWN to a slide plateau. Past the peak, more angle = less grip:
+ * then eases DOWN to `slideFrac`. Past the peak, more angle = less grip:
  * that is the whole feel of a drift, and the plateau is why you can catch it.
+ *
+ * The plateau is per-axle - see TYRE.slideFrontFrac / slideRearFrac. It is the
+ * difference between them that decides whether a slide converges or spins.
  */
-function tyreCurve(slipAngle: number): number {
+function tyreCurve(slipAngle: number, slideFrac: number): number {
   const a = slipAngle < 0 ? -slipAngle : slipAngle
   if (a <= TYRE.peakSlip) return a / TYRE.peakSlip
-  if (a >= TYRE.tailSlip) return TYRE.slideFrac
+  if (a >= TYRE.tailSlip) return slideFrac
   const t = (a - TYRE.peakSlip) / (TYRE.tailSlip - TYRE.peakSlip)
   const s = t * t * (3 - 2 * t)
-  return 1 + (TYRE.slideFrac - 1) * s
+  return 1 + (slideFrac - 1) * s
 }
 
 export interface VehiclePhysicsRefs {
@@ -404,7 +407,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       if (isRear && input.handbrake) mu *= TYRE.handbrakeGrip
 
       const maxF = mu * load
-      const curveVal = tyreCurve(alpha)
+      const curveVal = tyreCurve(alpha, isFront ? TYRE.slideFrontFrac : TYRE.slideRearFrac)
       let fLat = -Math.sign(vLat) * maxF * curveVal
       if (speed < 2) fLat -= vLat * load * ASSIST.lowSpeedLateral
 
@@ -477,16 +480,55 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       body.addForce(_rv, true)
     }
 
-    // ----- yaw stability: a light hand on the tiller, released while drifting -----
+    const airborne = groundedCount === 0
+
+    // Does the player MEAN to be sideways? Handbrake down, or a genuine steering
+    // input, says yes - and every assist below stands down. Throttle deliberately
+    // does NOT count: a kid holds throttle permanently, it says nothing about intent.
+    const wantsDrift = Math.max(
+      input.handbrake ? 1 : 0,
+      smoothstep(ASSIST.driftIntentLo, ASSIST.driftIntentHi, Math.abs(input.steer))
+    )
+    const assistGain = 1 - wantsDrift
+
+    // ----- yaw stability: light hand on the tiller; released when the player asks
+    //       for a slide, and firmed right up when they have let go mid-slide. -----
     const yawRate = _angvel.dot(_up)
-    const yawK = s.drifting ? ASSIST.yawDampDrift : ASSIST.yawDamp
+    const yawK = s.drifting
+      ? ASSIST.yawDampDrift + (ASSIST.yawDampRecover - ASSIST.yawDampDrift) * assistGain
+      : ASSIST.yawDamp
     _rv.x = -_up.x * yawRate * yawK
     _rv.y = -_up.y * yawRate * yawK
     _rv.z = -_up.z * yawRate * yawK
     body.addTorque(_rv, true)
 
+    // ----- drift recovery: restoring torque toward the velocity vector -----
+    // Damping alone only fights yaw RATE, so a slide that is already rotating
+    // slowly still marches to 180deg. This is the missing spring: it pulls the
+    // nose back onto the direction of travel, in proportion to how far off it is.
+    // Zero while the player is asking for a drift, zero in a reverse manoeuvre,
+    // zero in the air, zero below walking pace.
+    if (!airborne && !reversing && assistGain > 0.01 && speed > ASSIST.assistSpeedLo) {
+      const vLatCar = _linvel.dot(_right)
+      // + beta = the car is travelling to its own right, so the nose must yaw right.
+      const beta = Math.atan2(vLatCar, vLongCar)
+      const mag = Math.abs(beta)
+      if (mag > ASSIST.driftDeadband) {
+        const over = Math.sign(beta) * Math.min(mag - ASSIST.driftDeadband, 1.2)
+        const ramp = smoothstep(ASSIST.assistSpeedLo, ASSIST.assistSpeedHi, speed)
+        const tq = clamp(
+          -ASSIST.driftRestore * over * assistGain * ramp,
+          -ASSIST.driftRestoreMax,
+          ASSIST.driftRestoreMax
+        )
+        _rv.x = _up.x * tq
+        _rv.y = _up.y * tq
+        _rv.z = _up.z * tq
+        body.addTorque(_rv, true)
+      }
+    }
+
     // ----- air control: minimal. Enough to straighten a landing, not to fly. -----
-    const airborne = groundedCount === 0
     if (airborne) {
       const pitchT = (input.throttle - input.brake) * ASSIST.airPitch
       const yawT = -input.steer * ASSIST.airYaw
@@ -501,6 +543,9 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     // =========================================================
     const rearLat = (latSlip[2] + latSlip[3]) * 0.5
     const frontLat = (latSlip[0] + latSlip[1]) * 0.5
+    // Longitudinal saturation (wheelspin under power, lock-up under brakes) stays
+    // PRIVATE: it drives the rev needle and the wheel-spin visuals, and nothing else.
+    // It must never reach telemetry.slip - see below.
     let longSlip = 0
     for (let i = 0; i < WHEEL_COUNT; i++) if (longClip[i] > longSlip) longSlip = longClip[i]
 
@@ -513,9 +558,12 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     telemetry.brake = input.brake
     telemetry.steer = input.steer
     telemetry.handbrake = input.handbrake
+    // telemetry.slip means LATERAL SLIDE - the tail stepping out - and nothing else.
+    // Its consumers are tyre smoke and skid audio, and both are lying if it lights
+    // up during straight-line braking. Rear-biased, because that is what a slide is.
     telemetry.slip = airborne
       ? telemetry.slip * 0.9
-      : clamp(Math.max(rearLat, frontLat * 0.7, longSlip * 0.85), 0, 1)
+      : clamp(Math.max(rearLat, frontLat * 0.55), 0, 1)
     telemetry.drifting = s.drifting && !airborne
     telemetry.airborne = airborne
 

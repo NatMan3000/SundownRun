@@ -75,6 +75,8 @@ integrated GPU as the "ordinary laptop" baseline:
 
 ## 5. Hard rules
 
+- The world physically contains the player: no reachable route lets the car leave the map, clip through boundary geometry, or fall off. Boundaries read as natural (mountains, rock), never as an invisible wall hit at speed without visual cause.
+- Interactable objects behave consistently: if one tree collides, every reachable tree collides - and a tree hit fast enough smashes away rather than bricking the car.
 - Self-contained: no external model/texture/font/CDN URLs. Everything procedural or committed.
 - `bun install && bun run dev` on a clean clone is the entire setup.
 - Kid door: the fun knobs (car colour, handling feel, time-of-day, camera, delights)
