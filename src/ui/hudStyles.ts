@@ -450,8 +450,63 @@ html[data-intro] .hud-hint { opacity: 0; }
   transform: scale(1.3);
 }
 
+/* ---------------- steering sensitivity ---------------- */
+
+/* same row grammar as the car selector, so the chevrons line up vertically */
+.intro__garage--steer { margin-top: 20px; }
+.intro__chev--pm { font-size: 17px; padding-bottom: 1px; }
+
+.intro__steer { min-width: 250px; }
+.intro__steername {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  margin-right: -0.2em;
+  color: #F2E8D5;
+  opacity: 0.82;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.85);
+}
+.intro__steername b {
+  margin-left: 7px;
+  color: var(--amber, #FFB35C);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+.intro__steertrack {
+  margin-top: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #F2E8D5;
+}
+.intro__steertrack > span {
+  opacity: 0.4;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
+}
+.intro__ticks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.intro__tick {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(242, 232, 213, 0.24);
+  transition: background 180ms ease, transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.intro__tick--on {
+  background: var(--amber, #FFB35C);
+  transform: scale(1.75);
+}
+
 .intro__garagehint {
-  margin-top: 13px;
+  margin-top: 15px;
   font-size: 10px;
   letter-spacing: 0.24em;
   text-transform: uppercase;

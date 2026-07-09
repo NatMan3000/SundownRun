@@ -17,8 +17,20 @@ import * as audio from '../audio/AudioEngine'
 const DRIVING_KMH = 3
 
 /** Standard gamepad mapping. The dpad browses the garage; everything else drives. */
+const DPAD_UP = 12
+const DPAD_DOWN = 13
 const DPAD_LEFT = 14
 const DPAD_RIGHT = 15
+const DPAD = [DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT]
+
+// Steering sensitivity: matches the clamp in core/store's setSteering.
+const STEER_MIN = 0.6
+const STEER_MAX = 1.6
+const STEER_STEP = 0.1
+const STEER_TICKS = Math.round((STEER_MAX - STEER_MIN) / STEER_STEP) // 10 gaps, 11 stops
+
+const round1 = (v: number) => Math.round(v * 10) / 10
+const steerIndex = (v: number) => Math.round((round1(v) - STEER_MIN) / STEER_STEP)
 
 /** Short, and deliberately not "SUNDOWN <x>" - that name is CONFIG.carName's job. */
 const CAR_NAMES: Record<CarBodyId, string> = {
@@ -32,6 +44,8 @@ export function IntroCard() {
   const [out, setOut] = useState(false)
   const [gone, setGone] = useState(false)
   const carBody = useGameStore((s) => s.carBody)
+  const steering = useGameStore((s) => s.steering)
+  const steerIdx = steerIndex(steering)
 
   // The HUD hides itself while the card is up (see hudStyles), so the title
   // screen is a title screen and not a title screen with a speedo behind it.
@@ -53,7 +67,16 @@ export function IntroCard() {
     const next = CAR_BODIES[(i + dir + CAR_BODIES.length) % CAR_BODIES.length]
     if (next === s.carBody) return
     s.setCarBody(next)
-    audio.playSelect(CAR_BODIES.indexOf(next))
+    audio.playSelect(CAR_BODIES.indexOf(next) / (CAR_BODIES.length - 1))
+  }, [])
+
+  const bump = useCallback((dir: number) => {
+    const s = useGameStore.getState()
+    const cur = round1(s.steering)
+    const next = round1(Math.min(STEER_MAX, Math.max(STEER_MIN, cur + dir * STEER_STEP)))
+    if (next === cur) return // already against the rail: no move, no blip
+    s.setSteering(next)
+    audio.playSelect(steerIndex(next) / STEER_TICKS)
   }, [])
 
   useEffect(() => {
@@ -69,16 +92,35 @@ export function IntroCard() {
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // The garage carve-out. Browsing cars must not start the race.
-      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-        if (!e.repeat) cycle(e.code === 'ArrowLeft' ? -1 : 1)
-        return
+      switch (e.code) {
+        case 'ArrowLeft':
+        case 'ArrowRight':
+        case 'ArrowUp':
+        case 'ArrowDown':
+          // The garage owns the arrows while the card is up, and it claims them
+          // in the CAPTURE phase so core/input's own window listener never sees
+          // them. That matters: ArrowUp is throttle, and one blip of throttle
+          // would push the car past DRIVING_KMH and dismiss the card out from
+          // under the kid who was only trying to adjust the steering.
+          e.stopPropagation()
+          e.preventDefault()
+          if (e.repeat) return // holding an arrow must not machine-gun the list
+          if (e.code === 'ArrowLeft') cycle(-1)
+          else if (e.code === 'ArrowRight') cycle(1)
+          else bump(e.code === 'ArrowUp' ? 1 : -1)
+          return
+        default:
+          dismissByGesture()
       }
-      dismissByGesture()
     }
 
+    // Not passive, and capture: we need preventDefault + stopPropagation above.
+    // The AudioContext unlock also listens on window in the capture phase, and
+    // stopPropagation does not stop other listeners on the same node - so the
+    // arrows still start the audio, which is what makes the blip audible.
+    const capture: AddEventListenerOptions = { capture: true }
     const opts: AddEventListenerOptions = { passive: true }
-    window.addEventListener('keydown', onKeyDown, opts)
+    window.addEventListener('keydown', onKeyDown, capture)
     window.addEventListener('pointerdown', dismissByGesture, opts)
     window.addEventListener('touchstart', dismissByGesture, opts)
 
@@ -86,8 +128,7 @@ export function IntroCard() {
     // Note a gamepad button is NOT a user gesture as far as the browser is
     // concerned, so this path never calls ensureStarted() - doing so would only
     // earn an "AudioContext was not allowed to start" warning in the console.
-    let prevLeft = false
-    let prevRight = false
+    const prev = [false, false, false, false] // up, down, left, right
     const poll = setInterval(() => {
       if (telemetry.speedKmh > DRIVING_KMH) {
         setOut(true)
@@ -98,15 +139,16 @@ export function IntroCard() {
         const p = pads[i]
         if (!p || !p.connected) continue
 
-        const left = p.buttons[DPAD_LEFT]?.pressed ?? false
-        const right = p.buttons[DPAD_RIGHT]?.pressed ?? false
-        if (left && !prevLeft) cycle(-1)
-        if (right && !prevRight) cycle(1)
-        prevLeft = left
-        prevRight = right
+        // Rising edges only, so holding the dpad does not run away with the list.
+        const now = DPAD.map((b) => p.buttons[b]?.pressed ?? false)
+        if (now[0] && !prev[0]) bump(1) //    dpad up: twitchier
+        if (now[1] && !prev[1]) bump(-1) //   dpad down: calmer
+        if (now[2] && !prev[2]) cycle(-1)
+        if (now[3] && !prev[3]) cycle(1)
+        for (let k = 0; k < prev.length; k++) prev[k] = now[k]
 
         for (let b = 0; b < p.buttons.length; b++) {
-          if (b === DPAD_LEFT || b === DPAD_RIGHT) continue
+          if (DPAD.includes(b)) continue
           if (p.buttons[b].pressed) {
             setOut(true)
             return
@@ -117,12 +159,12 @@ export function IntroCard() {
     }, 80)
 
     return () => {
-      window.removeEventListener('keydown', onKeyDown, opts)
+      window.removeEventListener('keydown', onKeyDown, capture)
       window.removeEventListener('pointerdown', dismissByGesture, opts)
       window.removeEventListener('touchstart', dismissByGesture, opts)
       clearInterval(poll)
     }
-  }, [out, cycle])
+  }, [out, cycle, bump])
 
   if (gone) return null
 
@@ -130,6 +172,10 @@ export function IntroCard() {
   const pick = (dir: number) => (e: { stopPropagation: () => void }) => {
     e.stopPropagation()
     cycle(dir)
+  }
+  const nudge = (dir: number) => (e: { stopPropagation: () => void }) => {
+    e.stopPropagation()
+    bump(dir)
   }
   const swallow = (e: { stopPropagation: () => void }) => e.stopPropagation()
 
@@ -200,7 +246,47 @@ export function IntroCard() {
             &rsaquo;
           </div>
         </div>
-        <div className="intro__garagehint">arrows or click to pick your ride</div>
+        {/* Steering sensitivity, same row grammar as the car above it. */}
+        <div className="intro__garage intro__garage--steer">
+          <div
+            className="intro__chev intro__chev--pm"
+            role="button"
+            tabIndex={-1}
+            aria-label="calmer steering"
+            onPointerDown={nudge(-1)}
+            onTouchStart={swallow}
+          >
+            &minus;
+          </div>
+
+          <div className="intro__steer">
+            <div className="intro__steername">
+              STEERING <b>{steering.toFixed(1)}</b>
+            </div>
+            <div className="intro__steertrack">
+              <span>calm</span>
+              <div className="intro__ticks">
+                {Array.from({ length: STEER_TICKS + 1 }, (_, i) => (
+                  <div key={i} className={i === steerIdx ? 'intro__tick intro__tick--on' : 'intro__tick'} />
+                ))}
+              </div>
+              <span>twitchy</span>
+            </div>
+          </div>
+
+          <div
+            className="intro__chev intro__chev--pm"
+            role="button"
+            tabIndex={-1}
+            aria-label="twitchier steering"
+            onPointerDown={nudge(1)}
+            onTouchStart={swallow}
+          >
+            +
+          </div>
+        </div>
+
+        <div className="intro__garagehint">arrows or click to set up your ride</div>
 
         <div className="intro__go">press any key to drive</div>
       </div>

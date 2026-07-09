@@ -16,6 +16,16 @@ function loadCarBody(): CarBodyId {
   return CONFIG.carBody
 }
 
+function loadNumber(key: string, fallback: number, min: number, max: number): number {
+  try {
+    const v = parseFloat(localStorage.getItem(key) ?? '')
+    if (Number.isFinite(v)) return Math.min(max, Math.max(min, v))
+  } catch {
+    // storage unavailable - use the fallback
+  }
+  return fallback
+}
+
 // Low-frequency game state (React-reactive). Per-frame values live in
 // core/telemetry.ts instead - never put a number that changes every frame here.
 
@@ -28,6 +38,10 @@ interface GameStore {
   // car selection (runtime - the title-screen garage; CONFIG.carBody is the default)
   carBody: CarBodyId
   setCarBody: (b: CarBodyId) => void
+
+  // steering sensitivity (runtime setting, persisted; CONFIG.steering is the default)
+  steering: number
+  setSteering: (v: number) => void
 
   // delights
   collectiblesTotal: number
@@ -60,6 +74,17 @@ interface GameStore {
 export const useGameStore = create<GameStore>((set) => ({
   inputDevice: 'keyboard',
   setInputDevice: (d) => set((s) => (s.inputDevice === d ? s : { inputDevice: d })),
+
+  steering: loadNumber('sundown-run.steering', CONFIG.steering, 0.6, 1.6),
+  setSteering: (v) => {
+    const clamped = Math.min(1.6, Math.max(0.6, v))
+    try {
+      localStorage.setItem('sundown-run.steering', String(clamped))
+    } catch {
+      // fine - just won't survive a reload
+    }
+    set({ steering: clamped })
+  },
 
   carBody: loadCarBody(),
   setCarBody: (b) => {
