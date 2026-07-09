@@ -85,6 +85,7 @@ import {
   buildGlassShape,
   buildProfile,
   buildRoofShape,
+  glassHalfWidth,
 } from './carBodyProfiles'
 import type { BodySpec, BoxSpec } from './carBodyProfiles'
 
@@ -385,7 +386,7 @@ function buildBody(id: CarBodyId): BodyGeometry {
   return {
     paint: merge([shell, buildSwage(s)], `${id}:paint`),
     cabin: merge(cabinParts, `${id}:cabin`),
-    glass: extrudeAcross(buildGlassShape(s), s.glassHalf, 0.03, 0.02, 1),
+    glass: extrudeAcross(buildGlassShape(s), glassHalfWidth(s), 0.03, 0.02, 1),
     trim: buildDarkTrim(s),
     head: buildHeadlights(s),
     tail: buildTaillights(s),

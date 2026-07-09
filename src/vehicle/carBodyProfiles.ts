@@ -147,29 +147,36 @@ export function buildProfile(s: BodySpec): THREE.Shape {
 }
 
 /**
- * How far the glass core's roof line sits BELOW the painted roof band's.
+ * How far the glass core sinks below the painted roofline, and how much narrower
+ * it is built than the outline says.
  *
  * Every variant's `roof` band was authored by copying the `glass` roof points -
- * so the band's top face and the glass core's top face were the same plane,
+ * so the band's top face and the glass core's top face were the SAME PLANE,
  * separated only in x. Two coplanar surfaces do not take turns: the depth test
- * resolves them per-pixel, per-frame, and the roof shimmers with a black moire.
+ * resolves them per-pixel, per-frame, and the whole glasshouse top shimmers with
+ * a black moire. It was never an edge artefact; it was the entire face.
  *
- * The cure is separation, not polygonOffset: the band's top edge stays exactly
- * where it was (it IS the visible roofline), and the glass ducks 18 mm under it.
- * Enough that nothing can ever tie; small enough that the 38 mm the band already
- * reaches down still buries its underside inside the glass.
+ * The cure is geometric separation, not polygonOffset. The band's top edge stays
+ * exactly where it was - it IS the visible roofline - and the ENTIRE glass
+ * profile is translated 22 mm down, uniformly, so no part of its top face can
+ * coincide with the panel above it anywhere along its extent. It is also built
+ * 5 mm narrower on each flank than its outline nominally asks for, so no side
+ * face can land on a pillar's face either. Nothing about the car's silhouette
+ * changes: the cowl and the backlight base only sink deeper into a beltline they
+ * were already buried in.
  */
-export const GLASS_ROOF_DROP = 0.018
+export const GLASS_ROOF_DROP = 0.022
+export const GLASS_SIDE_SHRINK = 0.005
 
 export function buildGlassShape(s: BodySpec): THREE.Shape {
-  // The first and last points are the cowl and the backlight base: they sit down
-  // inside the body's beltline and must not move. Everything between them is
-  // the cabin's top line, and it drops.
-  const last = s.glass.length - 1
-  const pts = s.glass.map((p, i) =>
-    i === 0 || i === last ? p : v2(p.x, p.y - GLASS_ROOF_DROP)
-  )
-  return new THREE.Shape(pts)
+  // uniform - every point, not just the roof span, so the top face drops as one
+  // rigid plane set and no segment is left kinked up against the panel above it
+  return new THREE.Shape(s.glass.map((p) => v2(p.x, p.y - GLASS_ROOF_DROP)))
+}
+
+/** Half-width the glass is actually extruded at. */
+export function glassHalfWidth(s: BodySpec): number {
+  return s.glassHalf - GLASS_SIDE_SHRINK
 }
 
 export function buildRoofShape(s: BodySpec): THREE.Shape {
@@ -359,7 +366,7 @@ const muscle: BodySpec = {
     v2(-1.05, 0.518),
   ],
   pillars: [
-    { z0: 0.53, y0: 0.285, z1: -0.12, y1: 0.485, thick: 0.07, width: 0.06, x: 0.826 },
+    { z0: 0.53, y0: 0.285, z1: -0.12, y1: 0.485, thick: 0.07, width: 0.06, x: 0.806 },
     { z0: -1.07, y0: 0.505, z1: -1.6, y1: 0.328, thick: 0.09, width: 0.11, x: 0.822 },
   ],
   mirror: { x: 0.895, y: 0.335, z: 0.42 },
@@ -425,7 +432,7 @@ const wedge: BodySpec = {
     v2(-0.8, 0.495),
   ],
   pillars: [
-    { z0: 0.73, y0: 0.215, z1: 0.23, y1: 0.4, thick: 0.06, width: 0.05, x: 0.706 },
+    { z0: 0.73, y0: 0.215, z1: 0.23, y1: 0.4, thick: 0.055, width: 0.05, x: 0.698 },
     { z0: -0.82, y0: 0.48, z1: -1.28, y1: 0.375, thick: 0.07, width: 0.085, x: 0.702 },
   ],
   mirror: { x: 0.86, y: 0.245, z: 0.62 },
