@@ -19,7 +19,13 @@ Open http://localhost:5199
 | Throttle | W or up | Right trigger |
 | Brake / reverse | S or down | Left trigger |
 | Handbrake (drift!) | Space | A button |
+| Camera view (chase / close / bonnet) | C | RB |
 | Reset to road | R | Y button |
+| Restart at the start line | Shift+R | View button |
+| Back to menu | Esc | Menu button |
+
+On the title screen: left/right arrows pick your car (four bodies), up/down set
+steering sensitivity. Both stick between sessions.
 
 Plug in a Bluetooth Xbox controller and touch any input - the game switches to it
 automatically. Touch the keyboard to switch back.
