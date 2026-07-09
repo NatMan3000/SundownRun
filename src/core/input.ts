@@ -13,10 +13,13 @@
 //  Whichever device produced input most recently owns the car -
 //  there is no setting for this.
 //
-//  CONFIG.steering (0.7 calm .. 1.3 twitchy) reaches the car twice:
-//  here, scaling the keyboard's attack rate and how much taming it
-//  gets; and in tuning.ts STEERING.latLimitG, scaling how much lock
-//  the rack will give at speed - which is what the gamepad feels.
+//  The steering knob (0.6 calm .. 1.6 aggressive) is RUNTIME state -
+//  useGameStore.steering, persisted, seeded from CONFIG.steering. It
+//  is read fresh every step via getState(), never subscribed to, so
+//  the settings screen can move it live with no re-render. It reaches
+//  the car twice: here, scaling the keyboard's attack rate; and in
+//  tuning.ts STEERING.latLimitG, scaling how much lock the rack gives
+//  at speed - which is what a gamepad feels.
 //
 //  updateInput(dt) is called once per PHYSICS step (fixed 60Hz),
 //  which makes the smoothing deterministic and frame-rate proof.
@@ -76,17 +79,27 @@ const TRIGGER_DEADZONE = 0.05
 // The gamepad path is untouched - it never needed this.
 const KB_TAME_LO_KMH = 30 //  below this the keyboard is left alone entirely
 const KB_TAME_HI_KMH = 120 // by here the taming is fully applied
-const KB_AUTHORITY_DROP = 0.3 // held key asks for 70% of lock at speed
-const KB_ATTACK_DROP = 0.62 //  and gets there at 38% of the rate
+// Taming depends on SPEED ONLY. The knob scales the rack and the attack rate; letting
+// it also scale the taming made the mapping circular and impossible to reason about.
+const KB_AUTHORITY_DROP = 0.15 // held key asks for 85% of lock at speed
+const KB_ATTACK_DROP = 0.4 //    and gets there at 60% of the rate
 
 function smoothstep(e0: number, e1: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)))
   return t * t * (3 - 2 * t)
 }
 
-/** CONFIG.steering, fenced to a range that cannot make the car undriveable. */
-function steeringKnob(): number {
-  return Math.max(0.6, Math.min(1.4, CONFIG.steering))
+/**
+ * The player's steering knob. Runtime state, read fresh each step - `getState()` is a
+ * plain property read, no subscription, no render. Fenced to the store's own 0.6..1.6
+ * so a corrupt localStorage value cannot make the car undriveable.
+ *
+ * CONFIG.steering is only the DEFAULT the store seeds itself from.
+ */
+export function steeringKnob(): number {
+  const v = useGameStore.getState().steering
+  if (!Number.isFinite(v)) return CONFIG.steering
+  return Math.max(0.6, Math.min(1.6, v))
 }
 
 // ---------- device state ----------
@@ -306,8 +319,8 @@ export function updateInput(dt: number): void {
   // from NaN). Treat a non-finite speed as zero and let the physics side recover.
   const knob = steeringKnob()
   const spdKmh = Number.isFinite(telemetry.speedKmh) ? telemetry.speedKmh : 0
-  const tame = smoothstep(KB_TAME_LO_KMH, KB_TAME_HI_KMH, spdKmh) / knob
-  const authority = 1 - KB_AUTHORITY_DROP * Math.min(tame, 1)
+  const tame = smoothstep(KB_TAME_LO_KMH, KB_TAME_HI_KMH, spdKmh)
+  const authority = 1 - KB_AUTHORITY_DROP * tame
   const steerTarget = dir * authority
 
   let steerRate: number
@@ -316,7 +329,7 @@ export function updateInput(dt: number): void {
     // A centre-crossing input is a counter-steer. It is never tamed and never slowed.
     steerRate = STEER_FLIP
   } else {
-    steerRate = STEER_ATTACK * knob * (1 - KB_ATTACK_DROP * Math.min(tame, 1))
+    steerRate = STEER_ATTACK * knob * (1 - KB_ATTACK_DROP * tame)
   }
   input.steer = approach(input.steer, steerTarget, steerRate, dt)
   if (Math.abs(input.steer) < 0.002) input.steer = 0

@@ -1,5 +1,5 @@
 // ============================================================
-//  CAR BODY - the Sundown GT
+//  CAR BODY - the Sundown garage
 // ------------------------------------------------------------
 //  THE SWAP CONTRACT (read this before re-skinning the car)
 //
@@ -30,6 +30,8 @@
 //     0..1 `compression`, and a `contact` flag. The node layout is
 //     steer group -> spin group -> mesh, so a swapped-in wheel mesh
 //     only has to sit at the origin with its axle along X.
+//     The wheels are SHARED by every body: they are built once at
+//     module scope and never rebuilt when the car changes.
 //
 //  4. SYNC. `sync()` is called by Vehicle ONCE per rendered frame,
 //     after the physics has written carVisual and before three
@@ -37,46 +39,54 @@
 //     a child's useFrame runs BEFORE its parent's, which would put
 //     the wheels one frame behind the car.
 //
-//  Nothing here allocates per frame.
+//  Nothing here allocates per frame. sync() is identical across
+//  all four bodies.
 //
 // ------------------------------------------------------------
-//  HOW THE BODY IS BUILT - surfaces, edges, no balloons
+//  HOW A BODY IS BUILT - surfaces, edges, no balloons
 //
 //  The mass is ONE 2D side profile (a THREE.Shape in the z/y
-//  plane) extruded across the car's width. The profile carries the
-//  whole design: a low bonnet falling to the nose, a beltline
-//  rising toward the rear, a Kamm tail chopped near-vertical, and
-//  the two wheel arches cut into it as clean 24-segment arcs.
+//  plane) extruded across the car's width, with the wheel arches
+//  cut into it as clean 24-segment arcs. The extrusion takes a
+//  SMALL bevel - a few centimetres, two segments. That single
+//  number is why the car reads as panels rather than as a balloon:
+//  every silhouette edge becomes a crisp chamfer with its own
+//  highlight instead of a fat radius.
 //
-//  The extrusion takes a SMALL bevel - 7.5 cm of chamfer, two
-//  segments. That single number is why the car reads as panels
-//  rather than as a balloon: every silhouette edge becomes a crisp
-//  chamfer with its own highlight instead of a fat radius. A loft
-//  of smoothly-varying cross sections cannot do this; it can only
-//  inflate, which is exactly how the last body went wrong.
-//
-//  Nothing wraps over a tyre. The body's flank is 0.855 m out; a
-//  tyre's outer face is 0.9425 m out, so the wheels stand PROUD of
-//  the paint and each arch opening clears the tread by 8 cm. You
-//  can always see the whole wheel.
+//  Nothing wraps over a tyre. Each body's flank stays inboard of
+//  WHEEL_OUTER, so the wheels stand PROUD of the paint, and every
+//  arch opening clears the tread by 7-9 cm. You can always see the
+//  whole wheel.
 //
 //  The greenhouse is a separate, narrower volume: a dark glass core
-//  with a painted roof band and painted A- and C-pillars sitting
-//  proud of it, so the side glass reads as an inset panel inside a
-//  frame - not as a black wrap over the top of the car.
+//  with a painted roof band and painted pillars sitting proud of
+//  it, so the side glass reads as an inset panel inside a frame.
 //
-//  Feature lines: a swage crease down each flank, a dark sill strip
-//  flush to the underside, an inset grille band with the headlights
-//  living in it, and a vertical tail panel carrying the light bar.
+//  The four profiles live in carBodyProfiles.ts. Selection comes
+//  from the store (the title-screen garage), and each body's
+//  geometry is built once and cached, so cycling back is instant.
 // ============================================================
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { CONFIG } from '../core/config'
+import { useGameStore } from '../core/store'
+import type { CarBodyId } from '../core/store'
 import { carVisual } from './carVisual'
 import type { CarBodyHandle } from './carVisual'
 import { WHEEL } from './tuning'
+import {
+  BODY_SPECS,
+  HUB_Y,
+  VIS_RADIUS,
+  WHEEL_WIDTH,
+  archHalfChord,
+  buildGlassShape,
+  buildProfile,
+  buildRoofShape,
+} from './carBodyProfiles'
+import type { BodySpec, BoxSpec } from './carBodyProfiles'
 
 // ---------- palette ----------
 
@@ -89,75 +99,40 @@ const RIM_LIP_COLOUR = '#D9D2C1'
 const HEADLIGHT_COLOUR = '#FFF4DC'
 const TAIL_COLOUR = '#FF2A16'
 
-// ---------- proportions ----------
-
 const ROAD_Y = -0.542 //   the road, at rest, in chassis-local space
-const HUB_Y = -0.2 //      wheel centre at rest
 
-/** Visual tyre radius. WHEEL.radius (0.34) is the physics ray length; the extra
- *  centimetre is the contact patch a real tyre flattens into the road. */
-const VIS_RADIUS = 0.35
-const WHEEL_WIDTH = 0.285
-/** Outer face of a tyre: 0.9425 m. The car's true widest point, by design. */
-const WHEEL_OUTER = WHEEL.halfTrack + WHEEL_WIDTH / 2
-/** The blob under the car spans the TRACK, not the paint - the wheels are wider. */
-const SHADOW_WIDTH = WHEEL_OUTER * 2 + 0.35
-
-/** Half-width of the painted mass. Inboard of the tyres, so no wing can ever
- *  swallow a wheel. */
-const BODY_HALF = 0.855
-/** The chamfer. Small and hard: this is what makes an edge an edge. */
-const BEVEL_T = 0.075
-const BEVEL_S = 0.034
-
-const Z_NOSE = 2.02
-const Z_TAIL = -1.95
-const SILL_Y = -0.32
-/** Arch opening radius. Tyre plus 8 cm of air, all the way round. */
-const ARCH_R = VIS_RADIUS + 0.08
-
-// greenhouse
-const GLASS_HALF = 0.79
-const ROOF_HALF = 0.822
-const Z_COWL = 0.98
-const Z_SCREEN_TOP = 0.22
-const Z_ROOF_REAR = -0.86
-const Z_BACKLIGHT_BASE = -1.45
-
-// ---------- helpers ----------
-
-function v2(x: number, y: number): THREE.Vector2 {
-  return new THREE.Vector2(x, y)
-}
+// ---------- geometry plumbing ----------
 
 /**
- * Cut a wheel arch into the profile's underside: a clean circular arc from the
- * sill, up over the hub, and back down to the sill. Sampled at 24 segments,
- * which is enough that the rim reads as a curve and not as a polygon.
+ * ExtrudeGeometry is non-indexed; Box, Cylinder, Torus and Lathe are indexed.
+ * mergeGeometries silently returns NULL when it is handed a mix - and a null
+ * geometry reaching three kills the entire frame with a `boundingSphere` of
+ * null, six thousand times a second, behind a black canvas. So: flatten every
+ * part first, and never assert. A loud throw at mount beats a silent void.
  */
-function archArc(pts: THREE.Vector2[], cz: number, r: number): void {
-  const dy = SILL_Y - HUB_Y
-  const dz = Math.sqrt(r * r - dy * dy)
-  const enter = Math.atan2(dy, -dz) + Math.PI * 2
-  const exit = Math.atan2(dy, dz)
-  const N = 24
-  for (let i = 0; i <= N; i++) {
-    const a = enter + (exit - enter) * (i / N)
-    pts.push(v2(cz + r * Math.cos(a), HUB_Y + r * Math.sin(a)))
+function flat(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  return g.index ? g.toNonIndexed() : g
+}
+
+function merge(parts: THREE.BufferGeometry[], label: string): THREE.BufferGeometry {
+  const merged = mergeGeometries(parts.map(flat), false)
+  if (!merged) {
+    throw new Error(
+      `CarBody: mergeGeometries returned null for "${label}" (${parts.length} parts). ` +
+        'Every part must share the same attributes and index-ness.'
+    )
   }
+  return merged
 }
 
-/**
- * Extrude a z/y side profile across the car's width, chamfered at both flanks.
- *
- * bevelOffset = -bevelSize is not decoration. With the default 0, three GROWS
- * the outline by bevelSize through the middle of the extrusion and leaves the
- * flat cap faces carrying the shape you actually drew. The nose then sits 34 mm
- * further forward than the profile says (swallowing anything mounted on it) and
- * every wheel arch is 34 mm SMALLER than authored - which is a fender leaning
- * back over the tyre. Offsetting by -bevelSize puts the drawn outline at the
- * body's widest section and insets the caps instead: a real chamfer.
- */
+function box(s: BoxSpec, mirrorX = false): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(s.w, s.h, s.d)
+  if (s.rx) g.rotateX(s.rx)
+  g.translate(mirrorX ? -s.x : s.x, s.y, s.z)
+  return g
+}
+
+/** Extrude a z/y side profile across the car's width, chamfered at both flanks. */
 function extrudeAcross(
   shape: THREE.Shape,
   halfWidth: number,
@@ -171,6 +146,13 @@ function extrudeAcross(
     bevelEnabled: true,
     bevelThickness: bevelT,
     bevelSize: bevelS,
+    // NOT decoration. With the default 0, three GROWS the outline by bevelSize
+    // through the middle of the extrusion and leaves the flat caps carrying the
+    // shape you actually drew: the nose ends up further forward than the profile
+    // says (swallowing anything mounted on it) and every wheel arch comes out
+    // SMALLER than authored - a fender leaning back over the tyre. Offsetting by
+    // -bevelSize puts the drawn outline at the widest section and insets the
+    // caps instead, which is a real chamfer.
     bevelOffset: -bevelS,
     bevelSegments,
     steps: 1,
@@ -182,240 +164,138 @@ function extrudeAcross(
   return g
 }
 
-/**
- * ExtrudeGeometry is non-indexed; BoxGeometry and friends are indexed, and
- * mergeGeometries refuses to mix the two. Flatten before merging.
- */
-function flat(g: THREE.BufferGeometry): THREE.BufferGeometry {
-  return g.index ? g.toNonIndexed() : g
-}
+// ---------- per-body parts ----------
 
-function box(
-  w: number,
-  h: number,
-  d: number,
-  x: number,
-  y: number,
-  z: number,
-  rx = 0,
-  rz = 0
-): THREE.BufferGeometry {
-  const g = new THREE.BoxGeometry(w, h, d)
-  if (rz !== 0) g.rotateZ(rz)
-  if (rx !== 0) g.rotateX(rx)
-  g.translate(x, y, z)
-  return g
-}
-
-// ---------- the main mass ----------
-
-/**
- * The side profile, counter-clockwise. Read it top to bottom and you are
- * reading the car: nose face, bonnet, cowl, rising beltline, haunch, deck,
- * ducktail, Kamm chop, valance, arch, sill, arch, valance.
- */
-function buildBodyShape(): THREE.Shape {
-  const p: THREE.Vector2[] = [
-    v2(Z_NOSE, -0.165), //         nose face, bottom
-    v2(1.985, 0.155), //           nose face, top - raked back, not a slab
-    v2(1.93, 0.245), //            bonnet leading edge
-    v2(1.7, 0.288),
-    v2(1.3, 0.325),
-    v2(Z_COWL, 0.318), //          cowl - the windscreen stands here
-    v2(0.2, 0.331),
-    v2(-0.5, 0.352), //            beltline rises toward the rear
-    v2(-1.05, 0.379), //           haunch shoulder, its high point
-    v2(-1.45, 0.362),
-    v2(-1.75, 0.344), //           deck
-    v2(-1.88, 0.338),
-    v2(-1.93, 0.362), //           ducktail lip
-    v2(Z_TAIL, 0.346),
-    v2(Z_TAIL, -0.08), //          Kamm: the tail is chopped, not tapered
-    v2(-1.9, -0.24), //            rear valance
-    v2(-1.833, SILL_Y),
-  ]
-  archArc(p, -WHEEL.halfBase, ARCH_R)
-  p.push(v2(1.007, SILL_Y))
-  archArc(p, WHEEL.halfBase, ARCH_R)
-  p.push(v2(1.92, -0.285)) //      front valance
-  return new THREE.Shape(p)
-}
-
-/** The greenhouse's outline: cowl, raked screen, one taut roof arc, backlight. */
-function buildGlassShape(): THREE.Shape {
-  return new THREE.Shape([
-    v2(Z_COWL, 0.3), //            buried in the body's beltline
-    v2(Z_SCREEN_TOP, 0.575), //    windscreen
-    v2(-0.3, 0.615), //            crown, just behind centre
-    v2(-0.6, 0.612),
-    v2(Z_ROOF_REAR, 0.588),
-    v2(Z_BACKLIGHT_BASE, 0.33), // backlight
-  ])
-}
-
-/** A painted band lying over the glass core's roof. It overhangs the side glass
- *  by 4 cm, which is the shadow line that makes the window read as inset. */
-function buildRoofShape(): THREE.Shape {
-  return new THREE.Shape([
-    v2(Z_ROOF_REAR, 0.532),
-    v2(-0.6, 0.556),
-    v2(-0.3, 0.559),
-    v2(Z_SCREEN_TOP, 0.519),
-    v2(Z_SCREEN_TOP, 0.575),
-    v2(-0.3, 0.615),
-    v2(-0.6, 0.612),
-    v2(Z_ROOF_REAR, 0.588),
-  ])
+/** One horizontal swage crease down each flank: a diamond section, proud enough
+ *  to catch a hard highlight the whole length of the car. */
+function buildSwage(s: BodySpec): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = []
+  for (const side of [1, -1]) {
+    const g = new THREE.BoxGeometry(0.03, 0.03, s.swage.len)
+    g.rotateZ(Math.PI / 4)
+    if (s.swage.rx) g.rotateX(s.swage.rx)
+    g.translate(side * (s.bodyHalf - 0.003), s.swage.y, s.swage.z)
+    parts.push(g)
+  }
+  return merge(parts, 'swage')
 }
 
 /** A- and C-pillars: painted bars standing proud of the glass on each side. */
-function buildPillars(): THREE.BufferGeometry {
+function buildPillars(s: BodySpec): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = []
-  const bar = (
-    z0: number,
-    y0: number,
-    z1: number,
-    y1: number,
-    thick: number,
-    width: number,
-    x: number
-  ) => {
-    const dz = z1 - z0
-    const dy = y1 - y0
-    // Length is the span EXACTLY. Add half a thickness at each end and the bar
-    // pokes out through the roof, which is what it was doing.
-    const len = Math.hypot(dz, dy)
-    const g = new THREE.BoxGeometry(width, thick, len)
-    g.rotateX(-Math.atan2(dy, dz))
-    g.translate(x, (y0 + y1) / 2, (z0 + z1) / 2)
-    return g
+  for (const side of [1, -1]) {
+    for (const p of s.pillars) {
+      const dz = p.z1 - p.z0
+      const dy = p.y1 - p.y0
+      // Length is the span EXACTLY. Add half a thickness at each end and the bar
+      // pokes out through the roof.
+      const g = new THREE.BoxGeometry(p.width, p.thick, Math.hypot(dz, dy))
+      g.rotateX(-Math.atan2(dy, dz))
+      g.translate(side * p.x, (p.y0 + p.y1) / 2, (p.z0 + p.z1) / 2)
+      parts.push(g)
+    }
   }
-  for (const s of [1, -1]) {
-    parts.push(bar(Z_COWL - 0.02, 0.325, Z_SCREEN_TOP + 0.03, 0.558, 0.065, 0.055, s * 0.806))
-    parts.push(bar(Z_ROOF_REAR - 0.02, 0.575, Z_BACKLIGHT_BASE + 0.03, 0.348, 0.075, 0.095, s * 0.802))
-  }
-  return mergeGeometries(parts, false)!
+  return merge(parts, 'pillars')
 }
 
-/** One horizontal swage crease down each flank. A diamond section, 2 cm proud:
- *  enough to catch a hard highlight line the whole length of the car. */
-function buildSwage(): THREE.BufferGeometry {
+function buildMirrors(s: BodySpec): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = []
-  for (const s of [1, -1]) {
-    const g = new THREE.BoxGeometry(0.03, 0.03, 3.28)
-    g.rotateZ(Math.PI / 4)
-    g.translate(s * 0.852, 0.105, 0.02)
-    parts.push(g)
-  }
-  return mergeGeometries(parts, false)!
-}
-
-function buildMirrors(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = []
-  for (const s of [1, -1]) {
+  for (const side of [1, -1]) {
     const pod = new THREE.BoxGeometry(0.135, 0.055, 0.1)
-    pod.translate(s * 0.885, 0.372, 0.79)
+    pod.translate(side * s.mirror.x, s.mirror.y, s.mirror.z)
     parts.push(pod)
   }
-  return mergeGeometries(parts, false)!
+  return merge(parts, 'mirrors')
 }
 
-// ---------- dark trim: sill, lips, splitter, diffuser, fascia panels ----------
-
 /** A ring of dark trim around each arch opening, sitting on the flank. */
-function buildArchLips(): THREE.BufferGeometry {
+function buildArchLips(s: BodySpec): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = []
-  const dy = SILL_Y - HUB_Y
-  const dz = Math.sqrt(ARCH_R * ARCH_R - dy * dy)
+  const dy = s.sillY - HUB_Y
+  const dz = archHalfChord(s)
   const enter = Math.atan2(dy, -dz) + Math.PI * 2
   const exit = Math.atan2(dy, dz)
   const sweep = enter - exit
   for (const cz of [WHEEL.halfBase, -WHEEL.halfBase]) {
-    for (const s of [1, -1]) {
-      const g = new THREE.TorusGeometry(ARCH_R - 0.006, 0.026, 6, 30, sweep)
+    for (const side of [1, -1]) {
+      const g = new THREE.TorusGeometry(s.archR - 0.006, 0.026, 6, 30, sweep)
       // The arc starts at the torus's local +x. Spin it back to the sill, then
       // stand the ring up in the z/y plane. Do NOT mirror it with a negative
       // scale: baking one into a geometry inverts its winding and the whole ring
       // gets backface-culled.
       g.rotateZ(exit)
       g.rotateY(Math.PI / 2)
-      g.translate(s * (BODY_HALF - 0.004), HUB_Y, cz)
+      g.translate(side * (s.bodyHalf - 0.004), HUB_Y, cz)
       parts.push(g)
     }
   }
-  return mergeGeometries(parts, false)!
+  return merge(parts, 'archLips')
 }
 
-function buildDarkTrim(): THREE.BufferGeometry {
+function buildDarkTrim(s: BodySpec): THREE.BufferGeometry {
+  const chord = archHalfChord(s)
+  const sillLen = 2 * (WHEEL.halfBase - chord) - 0.04
   const parts: THREE.BufferGeometry[] = [
-    // sill strips, flush to the underside of the body - they close the gap
-    // between the rocker and the road instead of floating below it
-    box(0.055, 0.1, 2.9, 0.842, -0.352, -0.06),
-    box(0.055, 0.1, 2.9, -0.842, -0.352, -0.06),
-    box(1.5, 0.045, 0.3, 0, -0.302, 1.78), //   front splitter
-    box(1.08, 0.13, 0.28, 0, -0.215, -1.85), // rear diffuser
-    box(0.09, 0.035, 0.09, 0.815, 0.352, 0.86), // mirror stalks
-    box(0.09, 0.035, 0.09, -0.815, 0.352, 0.86),
-    // The grille band lies ON the raked nose face, not on an imaginary vertical
-    // one, and it is deep enough that the headlights sit inside it.
-    box(1.44, 0.205, 0.03, 0, -0.012, 2.019, -0.108),
-    box(1.02, 0.07, 0.03, 0, -0.172, 2.014, -0.108), // lower intake
-    // the vertical Kamm tail panel
-    box(1.46, 0.225, 0.03, 0, 0.2, -1.963),
-
+    // sill strips, flush to the underside - they close the gap between the
+    // rocker and the road instead of floating below it
+    box({ w: 0.055, h: 0.1, d: sillLen, x: s.sillOffsetX, y: s.sillY - 0.032, z: 0 }),
+    box({ w: 0.055, h: 0.1, d: sillLen, x: -s.sillOffsetX, y: s.sillY - 0.032, z: 0 }),
+    box(s.splitter),
+    box(s.diffuser),
+    box(s.grille),
+    box(s.tailPanel),
+    box({ w: 0.09, h: 0.035, d: 0.09, x: s.mirror.x - 0.07, y: s.mirror.y - 0.02, z: s.mirror.z + 0.07 }),
+    box({ w: 0.09, h: 0.035, d: 0.09, x: -(s.mirror.x - 0.07), y: s.mirror.y - 0.02, z: s.mirror.z + 0.07 }),
   ]
-  for (const x of [0.32, -0.32]) {
+  if (s.intake) parts.push(box(s.intake))
+  for (const side of [1, -1]) {
     const pipe = new THREE.CylinderGeometry(0.048, 0.048, 0.12, 12)
     pipe.rotateX(Math.PI / 2)
-    pipe.translate(x, -0.155, -1.97)
+    pipe.translate(side * s.exhaust.x, s.exhaust.y, s.exhaust.z)
     parts.push(pipe)
   }
-  parts.push(buildArchLips())
-  return mergeGeometries(parts, false)!
+  parts.push(buildArchLips(s))
+  return merge(parts, 'darkTrim')
 }
 
-/** Headlights sit IN the grille band, proud of it by half a centimetre. */
-function buildHeadlights(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = []
-  for (const x of [0.46, -0.46]) {
-    parts.push(box(0.34, 0.075, 0.02, x, 0.038, 2.026, -0.108))
-    parts.push(box(0.22, 0.018, 0.018, x * 1.06, -0.058, 2.014, -0.108))
-  }
-  return mergeGeometries(parts, false)!
+/** Headlights sit IN the grille band, proud of it by a few millimetres. */
+function buildHeadlights(s: BodySpec): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [box(s.headlight), box(s.headlight, true)]
+  if (s.headlightStrip) parts.push(box(s.headlightStrip), box(s.headlightStrip, true))
+  return merge(parts, 'headlights')
 }
 
-/** Full-width bar plus two pods on the Kamm face. Rides carVisual.brake. */
-function buildTaillights(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [box(1.36, 0.05, 0.025, 0, 0.232, -1.972)]
-  for (const x of [0.5, -0.5]) parts.push(box(0.3, 0.088, 0.025, x, 0.232, -1.972))
-  return mergeGeometries(parts, false)!
+/** Full-width bar plus two pods on the tail face. Rides carVisual.brake. */
+function buildTaillights(s: BodySpec): THREE.BufferGeometry {
+  return merge([box(s.tailBar), box(s.tailPod), box(s.tailPod, true)], 'taillights')
 }
 
-function buildReverseLights(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = []
-  for (const x of [0.3, -0.3]) parts.push(box(0.14, 0.045, 0.02, x, 0.128, -1.97))
-  return mergeGeometries(parts, false)!
+function buildReverseLights(s: BodySpec): THREE.BufferGeometry {
+  return merge([box(s.reverse), box(s.reverse, true)], 'reverse')
 }
 
-// ---------- wheels ----------
+// ---------- wheels: shared by every body, built once ----------
 
 /** Lathed tyre: real sidewalls, rounded shoulders, flat tread. Axle along X. */
 function buildTyre(): THREE.BufferGeometry {
   const r = VIS_RADIUS
   const hw = WHEEL_WIDTH / 2
-  const profile: THREE.Vector2[] = [
-    v2(0.235, -hw),
-    v2(0.28, -hw - 0.005),
-    v2(0.315, -hw + 0.004),
-    v2(r - 0.03, -hw + 0.032),
-    v2(r, -hw + 0.075),
-    v2(r, hw - 0.075),
-    v2(r - 0.03, hw - 0.032),
-    v2(0.315, hw - 0.004),
-    v2(0.28, hw + 0.005),
-    v2(0.235, hw),
-  ]
-  const g = new THREE.LatheGeometry(profile, 26)
+  const v2 = (x: number, y: number) => new THREE.Vector2(x, y)
+  const g = new THREE.LatheGeometry(
+    [
+      v2(0.235, -hw),
+      v2(0.28, -hw - 0.005),
+      v2(0.315, -hw + 0.004),
+      v2(r - 0.03, -hw + 0.032),
+      v2(r, -hw + 0.075),
+      v2(r, hw - 0.075),
+      v2(r - 0.03, hw - 0.032),
+      v2(0.315, hw - 0.004),
+      v2(0.28, hw + 0.005),
+      v2(0.235, hw),
+    ],
+    26
+  )
   g.rotateZ(Math.PI / 2)
   return g
 }
@@ -435,10 +315,9 @@ function buildRim(): THREE.BufferGeometry {
   parts.push(face)
 
   for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2
     const spoke = new THREE.BoxGeometry(0.046, 0.15, 0.062)
     spoke.translate(0, 0.16, 0)
-    spoke.rotateX(a)
+    spoke.rotateX((i / 5) * Math.PI * 2)
     spoke.translate(hw - 0.024, 0, 0)
     parts.push(spoke)
   }
@@ -453,7 +332,7 @@ function buildRim(): THREE.BufferGeometry {
   disc.translate(hw - 0.085, 0, 0)
   parts.push(disc)
 
-  return mergeGeometries(parts, false)!
+  return merge(parts, 'rim')
 }
 
 /** The polished lip. One bright ring is worth more than a whole bright rim. */
@@ -484,6 +363,61 @@ function buildUnderShadowTexture(): THREE.CanvasTexture {
   return tex
 }
 
+// ---------- lazy, cached, shared ----------
+
+interface BodyGeometry {
+  paint: THREE.BufferGeometry
+  cabin: THREE.BufferGeometry
+  glass: THREE.BufferGeometry
+  trim: THREE.BufferGeometry
+  head: THREE.BufferGeometry
+  tail: THREE.BufferGeometry
+  reverse: THREE.BufferGeometry
+  shadowWidth: number
+}
+
+function buildBody(id: CarBodyId): BodyGeometry {
+  const s = BODY_SPECS[id]
+  const shell = extrudeAcross(buildProfile(s), s.bodyHalf, s.bevelT, s.bevelS, 2)
+  const roof = extrudeAcross(buildRoofShape(s), s.roofHalf, 0.035, 0.022, 2)
+  const cabinParts = [roof, buildPillars(s), buildMirrors(s)]
+  if (s.spoiler) cabinParts.push(box(s.spoiler))
+  return {
+    paint: merge([shell, buildSwage(s)], `${id}:paint`),
+    cabin: merge(cabinParts, `${id}:cabin`),
+    glass: extrudeAcross(buildGlassShape(s), s.glassHalf, 0.03, 0.02, 1),
+    trim: buildDarkTrim(s),
+    head: buildHeadlights(s),
+    tail: buildTaillights(s),
+    reverse: buildReverseLights(s),
+    // the blob spans the TRACK, not the paint - the wheels are wider
+    shadowWidth: (WHEEL.halfTrack + WHEEL_WIDTH / 2) * 2 + 0.35,
+  }
+}
+
+/** Built on first selection, kept for the session: cycling the garage is instant. */
+const bodyCache = new Map<CarBodyId, BodyGeometry>()
+function getBody(id: CarBodyId): BodyGeometry {
+  let g = bodyCache.get(id)
+  if (!g) {
+    g = buildBody(id)
+    bodyCache.set(id, g)
+  }
+  return g
+}
+
+const WHEEL_GEOM = {
+  tyre: buildTyre(),
+  rim: buildRim(),
+  rimLip: buildRimLip(),
+}
+
+let shadowTexture: THREE.CanvasTexture | null = null
+function getShadowTexture(): THREE.CanvasTexture {
+  if (!shadowTexture) shadowTexture = buildUnderShadowTexture()
+  return shadowTexture
+}
+
 // ============================================================
 
 export const CarBody = forwardRef<CarBodyHandle>(function CarBody(_props, ref) {
@@ -494,38 +428,14 @@ export const CarBody = forwardRef<CarBodyHandle>(function CarBody(_props, ref) {
   const reverseMat = useRef<THREE.MeshStandardMaterial>(null)
   const shadowRef = useRef<THREE.Mesh>(null)
 
-  const geom = useMemo(() => {
-    const shell = extrudeAcross(buildBodyShape(), BODY_HALF, BEVEL_T, BEVEL_S, 2)
-    const paint = mergeGeometries([flat(shell), flat(buildSwage())], false)!
-    const roof = extrudeAcross(buildRoofShape(), ROOF_HALF, 0.035, 0.022, 2)
-    const cabin = mergeGeometries(
-      [flat(roof), flat(buildPillars()), flat(buildMirrors())],
-      false
-    )!
-    return {
-      paint,
-      cabin,
-      glass: extrudeAcross(buildGlassShape(), GLASS_HALF, 0.03, 0.02, 1),
-      trim: buildDarkTrim(),
-      head: buildHeadlights(),
-      tail: buildTaillights(),
-      reverse: buildReverseLights(),
-      tyre: buildTyre(),
-      rim: buildRim(),
-      rimLip: buildRimLip(),
-    }
-  }, [])
-  const shadowTex = useMemo(() => buildUnderShadowTexture(), [])
+  // The garage. Re-renders (and swaps the car) only when the selection changes,
+  // which happens on the title screen, never mid-lap.
+  const bodyId = useGameStore((s) => s.carBody)
+  const geom = useMemo(() => getBody(bodyId), [bodyId])
+  const shadowTex = getShadowTexture()
 
-  useEffect(() => {
-    const built = geom
-    const tex = shadowTex
-    return () => {
-      for (const g of Object.values(built)) g.dispose()
-      tex.dispose()
-    }
-  }, [geom, shadowTex])
-
+  // sync() is identical for every body: it only ever touches the sprung group,
+  // the four wheel nodes and three emissive materials.
   useImperativeHandle(
     ref,
     (): CarBodyHandle => ({
@@ -647,7 +557,7 @@ export const CarBody = forwardRef<CarBodyHandle>(function CarBody(_props, ref) {
         rotation={[-Math.PI / 2, 0, 0]}
         renderOrder={1}
       >
-        <planeGeometry args={[SHADOW_WIDTH, 4.5]} />
+        <planeGeometry args={[geom.shadowWidth, 4.5]} />
         <meshBasicMaterial map={shadowTex} transparent depthWrite={false} opacity={0.7} />
       </mesh>
 
@@ -669,7 +579,7 @@ export const CarBody = forwardRef<CarBodyHandle>(function CarBody(_props, ref) {
             // commutes with an X mirror, so the spin direction is untouched.
             scale={[i % 2 === 0 ? 1 : -1, 1, 1]}
           >
-            <mesh geometry={geom.tyre} castShadow receiveShadow>
+            <mesh geometry={WHEEL_GEOM.tyre} castShadow receiveShadow>
               <meshStandardMaterial
                 color={TYRE_COLOUR}
                 roughness={0.88}
@@ -677,7 +587,7 @@ export const CarBody = forwardRef<CarBodyHandle>(function CarBody(_props, ref) {
                 envMapIntensity={0.9}
               />
             </mesh>
-            <mesh geometry={geom.rim} castShadow>
+            <mesh geometry={WHEEL_GEOM.rim} castShadow>
               <meshStandardMaterial
                 color={RIM_COLOUR}
                 roughness={0.38}
@@ -685,7 +595,7 @@ export const CarBody = forwardRef<CarBodyHandle>(function CarBody(_props, ref) {
                 envMapIntensity={1.1}
               />
             </mesh>
-            <mesh geometry={geom.rimLip}>
+            <mesh geometry={WHEEL_GEOM.rimLip}>
               <meshStandardMaterial
                 color={RIM_LIP_COLOUR}
                 roughness={0.16}

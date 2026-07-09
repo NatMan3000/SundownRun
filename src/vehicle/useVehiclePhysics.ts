@@ -31,7 +31,7 @@ import type { RapierRigidBody } from '@react-three/rapier'
 import { CONFIG } from '../core/config'
 import { telemetry } from '../core/telemetry'
 import { useGameStore } from '../core/store'
-import { initInput, input, updateInput } from '../core/input'
+import { initInput, input, steeringKnob, updateInput } from '../core/input'
 import { ROAD_WIDTH, getSpawn, getTerrainHeight, nearestRoadPoint } from '../core/terrain'
 
 import { carVisual } from './carVisual'
@@ -313,7 +313,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     // Full lock always commands the same lateral acceleration, whatever the speed.
     // See STEERING.latLimitG - this is the whole fix for "uncontrollable at 120".
     const gCap =
-      (STEERING.wheelbase * STEERING.latLimitG * 9.81 * CONFIG.steering) /
+      (STEERING.wheelbase * STEERING.latLimitG * 9.81 * steeringKnob()) /
       Math.max(speed * speed, 1)
     let limit = Math.min(STEERING.maxAngleLow, Math.max(STEERING.minAngle, gCap))
     // The rack re-opens only to CATCH a slide, never to feed one.

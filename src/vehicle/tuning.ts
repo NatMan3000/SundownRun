@@ -157,14 +157,15 @@ export const STEERING = {
   /**
    *  THE RACK IS LIMITED BY PHYSICS, NOT BY A FADE CURVE.
    *
-   *  Full lock commands a steady-state lateral acceleration of `latLimitG`, so
-   *      maxAngle(v) = wheelbase * latLimitG * g / v^2
+   *  Full lock commands a steady-state lateral acceleration of `latLimitG * knob`, so
+   *      maxAngle(v) = wheelbase * latLimitG * knob * g / v^2
    *  Under about 25 km/h that is wider than the mechanical lock and `maxAngleLow`
    *  rules; above it, this does. The result is constant-g steering: full lock always
    *  asks for the same cornering force, at any speed. That is how a real car feels.
+   *  `knob` is the runtime steering setting (useGameStore.steering, 0.6..1.6).
    *
    *  WHY (the old fade curve was the defect). Grip-limited road-wheel angle vs what
-   *  the old curve handed the player:
+   *  that curve handed the player:
    *
    *      speed     old rack    grip limit    excess
    *       60 km/h   25.5 deg     9.3 deg      2.7x
@@ -172,8 +173,18 @@ export const STEERING = {
    *      190 km/h    9.5 deg     0.9 deg     10.2x
    *
    *  On a gamepad you feel that and back off. On a keyboard every press is full
-   *  lock, so at 120 km/h every corner was a spin request: the front washed out,
-   *  the car left the road inside 0.8s, and lifting off snapped the rear loose.
+   *  lock, so at 120 km/h every corner was a spin request.
+   *
+   *  WHAT THE KNOB BUYS, at 120 km/h (grip limit is 1.62 g):
+   *
+   *      knob   rack     pad g    keyboard g   attack
+   *      0.6    1.29deg  0.90g    0.76g        2.88/s   calm
+   *      1.0    2.15deg  1.50g    1.28g        4.80/s   default - firm, still gripping
+   *      1.6    3.45deg  2.40g    2.04g        7.68/s   aggressive - asks for 1.26x
+   *                                                     grip, so the front washes and
+   *                                                     the tail follows. Deliberate:
+   *                                                     the drift-recovery assist is
+   *                                                     what keeps it catchable.
    */
   latLimitG: 1.5,
   /** Wheelbase, metres. Front axle to rear axle. */

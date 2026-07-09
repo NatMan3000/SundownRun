@@ -59,6 +59,9 @@ declare global {
       readonly cameraTransition: number
       /** Live world position of the camera - lets a checker prove it never snaps. */
       readonly cameraPos: [number, number, number]
+      /** Runtime steering knob, 0.6..1.6 (persisted). Settable for verification. */
+      steering: number
+      setSteering: (v: number) => void
     }
     __perf?: {
       running: boolean
@@ -187,6 +190,10 @@ export function DevTools() {
       get cameraPos(): [number, number, number] {
         return [camera.position.x, camera.position.y, camera.position.z]
       },
+      get steering() {
+        return useGameStore.getState().steering
+      },
+      setSteering: (v: number) => useGameStore.getState().setSteering(v),
     }
     return () => {
       delete window.__game
