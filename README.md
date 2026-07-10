@@ -4,12 +4,30 @@ A golden-hour open-world driving game, built for (and eventually by) Josh.
 
 ## Run it
 
+### Windows
+
+Double-click **`Sundown Run.bat`**.
+
+It finds Bun or Node, installs what it needs the first time, starts the game and
+opens your browser. Close the black window to stop playing.
+
+If it tells you nothing is installed, grab [Bun](https://bun.sh) (faster) or
+[Node.js LTS](https://nodejs.org), then double-click the file again.
+
+### Mac / Linux
+
 ```bash
 bun install
 bun run dev
 ```
 
 Open http://localhost:5199
+
+### Build a static copy
+
+```bash
+bun run build     # outputs to dist/
+```
 
 ## Controls
 

@@ -43,7 +43,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build process notes
 
-Built via Kai-as-orchestrator + 4 long-lived Opus worker agents (world / drive / look / avui) + 2 independent fresh-context checker agents, coordinated through the Nexus cluster kanban (project 45, "Car Game"). Checker verdicts and working traces are in `scratchpad/checks/` (gitignored - working evidence, not durable project record).
+Built via Kai-as-orchestrator + 4 long-lived Opus worker agents (world / drive / look / avui) + 2 independent fresh-context checker agents, coordinated through the Nexus cluster kanban (project 45, "Sundown Run"). Checker verdicts and working traces are in `scratchpad/checks/` (gitignored - working evidence, not durable project record). The prompt that drove the whole build is preserved at `research/fable-orchestrated-build-prompt.md`.
 
 ## Next Actions
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5199 --strictPort",
+    "start": "vite --port 5199 --strictPort --open",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview --port 5199 --strictPort"

@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Windows launcher must keep CRLF or cmd.exe can choke on labels
+*.bat text eol=crlf
+*.cmd text eol=crlf
