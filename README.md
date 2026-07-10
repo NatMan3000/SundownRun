@@ -6,13 +6,30 @@ A golden-hour open-world driving game, built for (and eventually by) Josh.
 
 ### Windows
 
-Double-click **`Sundown Run.bat`**.
+**1. Install Node.js.** Get the LTS installer from [nodejs.org](https://nodejs.org)
+and click through it. You only ever do this once. (If you'd rather use
+[Bun](https://bun.sh) it's faster, and the launcher will pick it up automatically
+— but Node has the friendlier installer.)
 
-It finds Bun or Node, installs what it needs the first time, starts the game and
-opens your browser. Close the black window to stop playing.
+**2. Get the game files.** Either:
 
-If it tells you nothing is installed, grab [Bun](https://bun.sh) (faster) or
-[Node.js LTS](https://nodejs.org), then double-click the file again.
+- **Download the zip** — on the [GitHub page](https://github.com/NatMan3000/SundownRun),
+  click the green **Code** button, then **Download ZIP**. Right-click the
+  downloaded zip and choose **Extract All**.
+- **Or clone it** if you have git:
+  ```
+  git clone https://github.com/NatMan3000/SundownRun.git
+  ```
+  This way `git pull` gets you the latest version whenever there's an update.
+
+**3. Double-click `Sundown Run.bat`.**
+
+The first run installs what it needs and takes a minute. Every run after that
+starts in a few seconds. Close the black window to stop playing.
+
+> If Windows complains that the file came from the internet, right-click
+> `Sundown Run.bat`, choose **Properties**, tick **Unblock**, then OK.
+> Cloning with git instead of downloading the zip avoids this entirely.
 
 ### Mac / Linux
 
