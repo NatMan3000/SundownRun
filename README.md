@@ -31,6 +31,29 @@ starts in a few seconds. Close the black window to stop playing.
 > `Sundown Run.bat`, choose **Properties**, tick **Unblock**, then OK.
 > Cloning with git instead of downloading the zip avoids this entirely.
 
+#### If it runs slow on a gaming laptop
+
+Windows hands browsers the power-saving integrated GPU by default, not your
+graphics card. A machine that should run this at hundreds of frames per second
+will crawl along at fifteen.
+
+Fix it in **Settings → System → Display → Graphics**: find your browser, click
+**Options**, choose **High performance**, then fully quit and reopen it. Keep
+the laptop plugged in — on battery the graphics card gets parked anyway.
+
+To check which card you actually got, press F12 and paste this into the console:
+
+```js
+const gl = document.createElement('canvas').getContext('webgl2')
+gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
+```
+
+It should name your graphics card. If it says Intel or AMD Radeon Graphics on a
+machine that has a separate card, that's the problem.
+
+To watch your frame rate while you play, set `showFps: true` in
+`src/core/config.ts` and save.
+
 ### Mac / Linux
 
 ```bash
