@@ -1,14 +1,14 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
-import { ROAD_DENSE, ROAD_RIBBON_HALF, ROAD_WIDTH, roadSpline } from '../core/terrain'
+import { ROAD_RIBBON_HALF, ROAD_WIDTH, START_LINE_T, roadSpline } from '../core/terrain'
 
 // ============================================================
 // START / FINISH
 //
-// Lap timing keys on a forward crossing of the spline's t=0 (vehicle/lapTracker.ts),
-// so the paint sits exactly there - not near there. The band is built from the same
-// dense road samples the ribbon is lofted from, layered 1.5 cm above the asphalt with
-// a polygon offset so it can never z-fight the road it belongs to.
+// Lap timing keys on a forward crossing of the spline's START_LINE_T (vehicle/lapTracker.ts),
+// so the paint sits exactly there - not near there. The band is lofted from the road frame
+// at that same station, layered 1.5 cm above the asphalt with a polygon offset so it can
+// never z-fight the road it belongs to.
 //
 // Two draw calls: the checkered band, and the gantry. The gantry casts the long
 // golden-hour shadow that tells you where the line is from half a straight away.
@@ -34,13 +34,17 @@ const CHAR = new THREE.Color('#2E2A27')
 const TIMBER = new THREE.Color('#6B4F35')
 const TIMBER_LIT = new THREE.Color('#8A6A48')
 
-/** The station at t=0, and the road frame there. */
+const _sp = new THREE.Vector3()
+const _st = new THREE.Vector3()
+
+/** The station at START_LINE_T, and the road frame there. */
 function startFrame() {
-  const D = ROAD_DENSE
-  const p = roadSpline.getPointAt(0)
-  // ROAD_DENSE[0] IS the t=0 station: getSpacedPoints starts at the curve's origin.
-  const tx = D.tx[0]
-  const tz = D.tz[0]
+  const p = roadSpline.getPointAt(START_LINE_T, _sp)
+  const tan = roadSpline.getTangentAt(START_LINE_T, _st)
+  // flatten the tangent into the xz plane and re-normalise for the road frame
+  const len = Math.hypot(tan.x, tan.z) || 1
+  const tx = tan.x / len
+  const tz = tan.z / len
   return {
     x: p.x,
     y: p.y,

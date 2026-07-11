@@ -29,11 +29,12 @@ export const HUD_CSS = `
 
 /* While the title card is up the HUD stands down, then eases in behind it.
    IntroCard owns the html[data-intro] attribute. */
-.hud-lap, .hud-shards, .hud-speed, .hud-hint { transition: opacity 300ms ease; }
+.hud-lap, .hud-shards, .hud-speed, .hud-hint, .trick-board { transition: opacity 300ms ease; }
 html[data-intro] .hud-lap,
 html[data-intro] .hud-shards,
 html[data-intro] .hud-speed,
-html[data-intro] .hud-hint { opacity: 0; }
+html[data-intro] .hud-hint,
+html[data-intro] .trick-board { opacity: 0; }
 
 /* ---------------- lap panel (top-left) ---------------- */
 
@@ -542,5 +543,124 @@ html[data-intro] .hud-hint { opacity: 0; }
 @keyframes introBreathe {
   0%, 100% { opacity: 0.42; }
   50%      { opacity: 1; }
+}
+
+/* ---------------- trick popups (upper centre) ---------------- */
+
+/* column-reverse: the newest shout sits on top, so a combo climbs as it chains.
+   Sits above the road's vanishing point, clear of the centre where you steer. */
+.trick-pops {
+  position: absolute;
+  left: 50%;
+  top: 29%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.trick-pop {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  white-space: nowrap;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+  /* same in/hold/out grammar as the toast - spring in, drift up and fade */
+  animation:
+    trickIn 260ms cubic-bezier(0.15, 1.4, 0.35, 1) both,
+    trickOut 300ms ease-in 1100ms forwards;
+}
+.trick-pop__label {
+  font-size: 30px;
+  background: linear-gradient(178deg, #FFF6E4 8%, #FFC98A 52%, #FF9E5E 96%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 3px 16px rgba(255, 150, 70, 0.35));
+}
+.trick-pop__pts {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+/* the combo position, a hot amber pill - the chain made legible */
+.trick-pop__combo {
+  font-size: 21px;
+  font-weight: 800;
+  color: #241503;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #FFE0B0, var(--amber));
+  box-shadow: 0 3px 16px rgba(255, 160, 60, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+/* a wipeout: muted amber, no gold, no glow - a note, not a trophy */
+.trick-pop--fail .trick-pop__label {
+  font-size: 24px;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--amber-dim);
+  filter: none;
+}
+/* deeper into a combo, and bigger tricks, shout louder */
+.trick-pop--combo .trick-pop__label { font-size: 34px; }
+.trick-pop--big .trick-pop__label {
+  font-size: 40px;
+  filter: drop-shadow(0 4px 22px rgba(255, 170, 80, 0.55));
+}
+@keyframes trickIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.86); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes trickOut {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(-22px) scale(0.98); }
+}
+
+/* ---------------- trick scoreboard (bottom-left) ---------------- */
+
+.trick-board {
+  position: absolute;
+  left: 16px;
+  bottom: 22px;
+  padding: 9px 14px;
+  min-width: 152px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.trick-board__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.trick-board__row--best {
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(242, 232, 213, 0.1);
+}
+.trick-board__label {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.trick-board__val {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+.trick-board__val--best {
+  font-size: 15px;
+  color: var(--amber);
 }
 `

@@ -38,6 +38,7 @@ import { carVisual } from './carVisual'
 import type { CarBodyHandle } from './carVisual'
 import { ghostRecorder } from './ghost'
 import { LapTracker } from './lapTracker'
+import { trickDetector } from './trickDetector'
 import { vehicleSignals } from './vehicleSignals'
 import {
   AERO,
@@ -255,6 +256,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       // Same lap bookkeeping as a reset: void the lap in progress, disarm timing.
       // bestLapMs is never touched - a restart is not amnesia.
       lap.onTeleport(performance.now())
+      trickDetector.cancel() // a teleport is not a landing - drop any air session
       vehicleSignals.resetTick++
       s.settleSteps = 4
       s.uprightTimer = 0
@@ -267,6 +269,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       s.resetPending = false
       teleportToRoad(body, s)
       lap.onTeleport(performance.now())
+      trickDetector.cancel() // ditto - drop any air session voided by the reset
       vehicleSignals.resetTick++
       s.settleSteps = 4 // suppress the impact detector while the solver settles
       s.uprightTimer = 0
@@ -293,6 +296,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     if (!finiteV(_pos) || !finiteV(_linvel) || !finiteV(_angvel) || !finite(_q.w)) {
       reportNaN(s, 'body state')
       teleportToRoad(body, s)
+      trickDetector.cancel()
       vehicleSignals.resetTick++
       s.settleSteps = 4
       telemetry.impact = 0
@@ -713,6 +717,14 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     // near-free when idle. _pos and _q still hold this step's chassis pose - the
     // teleport paths returned long before here, so a reset frame is never sampled.
     ghostRecorder.sample(_pos, _q)
+
+    // ----- trick detection -----
+    // Shares the physics step with the ghost recorder above; the two keep entirely
+    // separate module state and their per-step costs are independent and tiny (ghost:
+    // a decimated array write; tricks: three dot products while airborne, otherwise a
+    // single boolean). Fed the same post-teleport-guarded step - reset frames returned
+    // long ago - and the current basis + angular velocity, so it reads live rotation.
+    trickDetector.update(airborne, _up, _fwd, _right, _angvel)
 
     // ----- auto reset: fell off the world, or landed on the roof -----
     if (_pos.y < STATE.fallY) {

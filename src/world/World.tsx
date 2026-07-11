@@ -7,6 +7,7 @@ import { Grass } from './Grass'
 import { Trees } from './Trees'
 import { Rocks } from './Rocks'
 import { StartLine } from './StartLine'
+import { RidgeArches } from './RidgeArches'
 import { Colliders } from './Colliders'
 import { windUniforms } from './wind'
 
@@ -23,8 +24,8 @@ import { windUniforms } from './wind'
 // climb than a 190 km/h car has energy for, and a buried collider ring backs it
 // up (core/terrain.ts, world/boundary.ts).
 //
-// Draw calls: sky 1, mountains 1, terrain 1, road 1, start line 2, grass 1,
-// trees 3, rocks 1 = 11, plus 5 shadow-caster passes.
+// Draw calls: sky 1, mountains 1, terrain 1, road 1, start line 2, ridge arches 1,
+// grass 1, trees 3, rocks 1 = 12, plus 6 shadow-caster passes.
 // ============================================================
 
 export function World() {
@@ -40,6 +41,7 @@ export function World() {
       <Terrain />
       <Road />
       <StartLine />
+      <RidgeArches />
       <Grass />
       <Trees />
       <Rocks />

@@ -89,7 +89,7 @@ function gaussUV(u: number, v: number, su: number, sv: number): number {
 // well inside the rim, and none of them is near either of the two hidden sun shards
 // (world/Delights.tsx puts those 24 m and 42 m off the road).
 
-export type PlaygroundKind = 'kicker' | 'double' | 'bowl' | 'table'
+export type PlaygroundKind = 'kicker' | 'double' | 'bowl' | 'table' | 'ramp'
 
 export interface Playground {
   x: number
@@ -119,6 +119,41 @@ export const PLAYGROUNDS: readonly Playground[] = [
     x: 318, z: 8, heading: 3.5, kind: 'table', reach: 150,
     what: 'a flat-topped table: steep up-ramp, 70 m of nothing, steep landing',
   },
+
+  // ---------- more places to play, spread across the open infield ----------
+  {
+    x: 60, z: -258, heading: 0.5, kind: 'table', reach: 150,
+    what: 'south-infield tabletop - stay flat and clear the gap',
+  },
+  {
+    x: -84, z: -54, heading: 1.9, kind: 'double', reach: 175,
+    what: 'the infield double, right in the belly of the loop',
+  },
+  {
+    x: 384, z: -206, heading: 3.5, kind: 'kicker', reach: 135,
+    what: 'east-infield kicker - flings you back toward the sweeper',
+  },
+  {
+    x: -360, z: 44, heading: 0.2, kind: 'table', reach: 150,
+    what: 'west-infield table, out past the downhill sweeper',
+  },
+  {
+    x: 250, z: 382, heading: 3.1, kind: 'double', reach: 170,
+    what: 'the north pocket double, tucked in behind the switchback',
+  },
+
+  // ---------- the ridge run: tight kickers up the spine between the switchback legs ----------
+  // Narrow 'ramp' features so their tails die before they reach either leg (~42 m off).
+  // A kid coming off the switchback can hop the ridge, chain two launches and grab the
+  // hidden shard that lives up here (world/Delights.tsx).
+  {
+    x: 168, z: 212, heading: 0.2, kind: 'ramp', reach: 90,
+    what: 'ridge run, launch 1 - a lean kicker on the spine',
+  },
+  {
+    x: 232, z: 226, heading: 0.2, kind: 'ramp', reach: 90,
+    what: 'ridge run, launch 2 - land the first, line up the second',
+  },
 ]
 
 /** Height these landforms add to the terrain. Zero everywhere outside their reach. */
@@ -145,6 +180,10 @@ function playgroundHeight(x: number, z: number): number {
     } else if (p.kind === 'bowl') {
       const r = Math.hypot(u, v)
       h += -6.5 * gaussUV(u, v, 30, 30) + 2.4 * Math.exp(-((r - 40) * (r - 40)) / 242)
+    } else if (p.kind === 'ramp') {
+      // tight launch kicker: 8 m up over a short run, then the ground drops away so you
+      // land on a downslope. Narrow across-axis (16) keeps it clear of flanking roads.
+      h += 8 * gaussUV(u, v, 15, 16) - 3.5 * gaussUV(u - 36, v, 24, 20)
     } else {
       // flat top between two steep ramps
       h += 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
@@ -189,6 +228,7 @@ function playgroundHeightOne(p: Playground, dx: number, dz: number): number {
     const r = Math.hypot(u, v)
     return -6.5 * gaussUV(u, v, 30, 30) + 2.4 * Math.exp(-((r - 40) * (r - 40)) / 242)
   }
+  if (p.kind === 'ramp') return 8 * gaussUV(u, v, 15, 16) - 3.5 * gaussUV(u - 36, v, 24, 20)
   return 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
 }
 
@@ -715,10 +755,10 @@ export function nearestRoadPoint(
   }
 }
 
-/** Vehicle spawn: on the road at t=0, facing along the tangent. */
+/** Vehicle spawn: on the start line, facing down the straight. */
 export function getSpawn(): { position: THREE.Vector3; rotationY: number } {
-  const p = roadSpline.getPointAt(0)
-  const tan = roadSpline.getTangentAt(0)
+  const p = roadSpline.getPointAt(START_LINE_T)
+  const tan = roadSpline.getTangentAt(START_LINE_T)
   return {
     position: new THREE.Vector3(p.x, p.y + 1.2, p.z),
     rotationY: Math.atan2(tan.x, tan.z),
@@ -728,7 +768,12 @@ export function getSpawn(): { position: THREE.Vector3; rotationY: number } {
 // ---------- start / finish line position ----------
 /**
  * Where the start/finish line sits, as road-spline t in [0,1). Lap timing
- * (vehicle/lapTracker.ts) and the painted line (world/StartLine.tsx) BOTH key
- * off this - change it here and the whole lap moves together.
+ * (vehicle/lapTracker.ts), the vehicle spawn (getSpawn above) and the painted line
+ * (world/StartLine.tsx) ALL key off this - change it here and the whole lap moves together.
+ *
+ * Anchored a third of the way down the south straight, not on the last corner's exit,
+ * so crossing it gives a proper run-up - the rest of the straight plus crest jump #1 -
+ * before turn 1. Resolved from a world anchor so it tracks any circuit re-authoring:
+ * [-30, -414] is past the corner exit, before the crest, on dead-flat asphalt.
  */
-export const START_LINE_T = 0
+export const START_LINE_T = nearestRoadPoint(-30, -414).t

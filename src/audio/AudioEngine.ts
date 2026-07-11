@@ -14,7 +14,6 @@
 //
 //    [sub sawA sawB harm intake] → oscMix → lowpass → waveshaper → engineGain ┐
 //    noiseA → skidBp → skidHp → skidGain ───────────────────────────────────┤
-//    noiseB → windBp → windGain ────────────────────────────────────────────┤
 //    noiseB → roadLp → roadGain ────────────────────────────────────────────┤
 //    one-shot voices → sfxBus ──────────────────────────────────────────────┤
 //                                                                            ↓
@@ -43,6 +42,14 @@ const REDLINE_HZ = 415
 /** Matches vehicle/tuning RPM.idle - telemetry.rpm never goes below this. */
 const RPM_IDLE = 0.1
 
+/**
+ * Free-rev while airborne. Wheels off the ground means no load, so the engine
+ * chases the limiter on throttle and settles back toward idle off it - nothing to
+ * do with ground speed. Per-second approach rates: eager up, a touch calmer down.
+ */
+const AIR_REV_UP = 3.4
+const AIR_REV_DOWN = 2.2
+
 /** Combo chime steps, semitones above G5. Major pentatonic + the octave. */
 const PENTATONIC = [0, 2, 4, 7, 9, 12, 14, 16, 19, 24]
 const G5 = 783.99
@@ -65,8 +72,6 @@ interface Graph {
   // beds
   skidBp: BiquadFilterNode
   skidGain: GainNode
-  windBp: BiquadFilterNode
-  windGain: GainNode
   roadLp: BiquadFilterNode
   roadGain: GainNode
   sources: AudioScheduledSourceNode[]
@@ -75,6 +80,11 @@ interface Graph {
 let G: Graph | null = null
 let hidden = false
 let suspendTimer: ReturnType<typeof setTimeout> | null = null
+
+// airborne free-rev: the unloaded engine level, integrated off the audio clock
+// since update() is not handed a frame delta.
+let airRevN = 0
+let lastUpdateT = -1
 
 // impact edge detector
 let prevImpact = 0
@@ -101,7 +111,6 @@ const dbg = {
   masterGain: 0,
   engineGain: 0,
   skidGain: 0,
-  windGain: 0,
   roadGain: 0,
   // mirrored telemetry, so a probe sees input and output in one snapshot
   rpm: 0,
@@ -116,6 +125,7 @@ const dbg = {
   landings: 0,
   voids: 0,
   selects: 0,
+  tricks: 0,
 }
 
 export type AudioDebug = typeof dbg
@@ -134,7 +144,6 @@ export function debug(): AudioDebug {
     dbg.masterGain = G.master.gain.value
     dbg.engineGain = G.engineGain.gain.value
     dbg.skidGain = G.skidGain.gain.value
-    dbg.windGain = G.windGain.gain.value
     dbg.roadGain = G.roadGain.gain.value
   }
   return { ...dbg }
@@ -262,17 +271,6 @@ function build(): Graph {
   skidHp.connect(skidGain)
   skidGain.connect(master)
 
-  // ---------- wind: airy top end, scales with speed ----------
-  const windBp = ctx.createBiquadFilter()
-  windBp.type = 'bandpass'
-  windBp.frequency.value = 900
-  windBp.Q.value = 0.55
-  const windGain = ctx.createGain()
-  windGain.gain.value = 0
-  noiseB.connect(windBp)
-  windBp.connect(windGain)
-  windGain.connect(master)
-
   // ---------- road: low rumble, dies in the air, roughens off-road ----------
   const roadLp = ctx.createBiquadFilter()
   roadLp.type = 'lowpass'
@@ -300,8 +298,6 @@ function build(): Graph {
     intakeGain,
     skidBp,
     skidGain,
-    windBp,
-    windGain,
     roadLp,
     roadGain,
     sources,
@@ -326,25 +322,69 @@ export function isRunning(): boolean {
 }
 
 /**
- * Arms the first user gesture. Browsers will not let an AudioContext make a
- * sound before one, so this is the whole autoplay policy in six lines.
+ * Sticky activation: has the user interacted with THIS document even once since
+ * it loaded. A gamepad button is not itself a user gesture, but once any real
+ * gesture (a single click, tap or keypress, ever) has landed, the browser keeps
+ * that activation for the page's whole life and will allow a resume() from any
+ * context after it. Missing API (old browser) reads as not-yet-activated, so a
+ * pad-only session never trips an "AudioContext was not allowed to start" warning.
+ */
+function hasBeenActivated(): boolean {
+  const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation
+  return ua ? ua.hasBeenActive : false
+}
+
+/**
+ * Arms the first user gesture, then keeps the audio alive for a pad-only player.
+ *
+ * The DOM listeners are the whole autoplay policy for keyboard / mouse / touch.
+ * But a gamepad button raises no DOM event and does not count as a user gesture,
+ * so a player who restarts (View / Shift+R keeps the same document) or drives on
+ * the pad alone would never re-arm audio through those listeners. So we also poll
+ * the pad: once the document already holds sticky activation - which it does the
+ * moment any single gesture has landed this page-life - a button press is allowed
+ * to wake the context. That is what makes sound survive a gamepad-driven restart
+ * with no keyboard in reach. One context per document: ensureStarted() only ever
+ * resumes an existing graph, it never rebuilds one that is already there.
  */
 export function installGestureUnlock(): () => void {
   const opts: AddEventListenerOptions = { passive: true, capture: true }
+  let padTimer: ReturnType<typeof setInterval> | null = null
 
   function remove() {
     window.removeEventListener('keydown', kick, opts)
     window.removeEventListener('pointerdown', kick, opts)
     window.removeEventListener('touchstart', kick, opts)
+    if (padTimer !== null) {
+      clearInterval(padTimer)
+      padTimer = null
+    }
   }
   function kick() {
     ensureStarted()
     if (isRunning()) remove()
   }
+  function pollPad() {
+    // Never attempt before a real gesture: without sticky activation resume() is
+    // refused and only logs a warning. A pad press alone cannot supply it.
+    if (!hasBeenActivated()) return
+    const pads = navigator.getGamepads ? navigator.getGamepads() : []
+    for (let i = 0; i < pads.length; i++) {
+      const p = pads[i]
+      if (!p || !p.connected) continue
+      for (let b = 0; b < p.buttons.length; b++) {
+        if (p.buttons[b]?.pressed) {
+          kick()
+          return
+        }
+      }
+    }
+  }
 
   window.addEventListener('keydown', kick, opts)
   window.addEventListener('pointerdown', kick, opts)
   window.addEventListener('touchstart', kick, opts)
+  padTimer = setInterval(pollPad, 120)
   return remove
 }
 
@@ -374,6 +414,10 @@ export function setHidden(next: boolean): void {
 export function dispose(): void {
   const g = G
   G = null
+  // A rebuilt context restarts its clock near 0; forget the old one so the first
+  // update() cannot hand the free-rev integrator a negative frame delta.
+  lastUpdateT = -1
+  airRevN = 0
   if (!g) return
   if (suspendTimer !== null) {
     clearTimeout(suspendTimer)
@@ -402,26 +446,48 @@ export function update(): void {
   const speed = telemetry.speedKmh
   const grounded = !telemetry.airborne
 
+  // frame delta off the audio clock - update() is not handed one. Clamped so a
+  // stalled tab cannot hand the integrator a huge step on resume.
+  const dt = lastUpdateT >= 0 ? Math.min(0.1, t - lastUpdateT) : 0
+  lastUpdateT = t
+
   // ---------- pitch ----------
   // rpm is normalised over the whole band including idle, so re-map from idle
   // to 1 before it drives the fundamental. The 0.95 exponent leans on the low
   // end just enough to feel torquey off the line.
+  //
+  // Grounded, the note follows telemetry.rpm - the loaded engine. AIRBORNE, the
+  // wheels drive nothing, so rpm (which tracks ground speed) is the wrong model:
+  // an engine with its load gone revs FREELY UP on the throttle and falls back off
+  // it. So in the air we free-rev our own level instead of following rpm, and
+  // reprime it from rpm every grounded frame so takeoff and landing hand off clean.
   const rpmN = clamp01((rpm - RPM_IDLE) / (1 - RPM_IDLE))
-  const hz = IDLE_HZ + (REDLINE_HZ - IDLE_HZ) * Math.pow(rpmN, 0.95)
+  let revN: number
+  if (grounded) {
+    revN = rpmN
+    airRevN = rpmN
+  } else {
+    const target = throttle > 0.05 ? 1 : 0 //          limiter on the gas, idle off it
+    const rate = throttle > 0.05 ? AIR_REV_UP : AIR_REV_DOWN
+    airRevN += (target - airRevN) * (1 - Math.exp(-rate * dt))
+    revN = airRevN
+  }
+  const hz = IDLE_HZ + (REDLINE_HZ - IDLE_HZ) * Math.pow(revN, 0.95)
   g.freqBus.offset.setTargetAtTime(hz, t, 0.028)
 
   // ---------- tone: the filter IS the throttle ----------
   // Closed = a docile burble. Open = a snarl. Tracking the fundamental keeps the
   // harmonic count roughly constant so the note does not get thin as it climbs.
-  const load = Math.max(throttle, rpmN * 0.4)
+  // Uses revN, not rpmN, so a free-revving jump brightens as it spins up.
+  const load = Math.max(throttle, revN * 0.4)
   const cutoff = 240 + 3300 * load + hz * 2.3
   g.lp.frequency.setTargetAtTime(cutoff, t, 0.05)
   g.lp.Q.setTargetAtTime(0.7 + 1.3 * throttle, t, 0.1)
   g.harmGain.gain.setTargetAtTime(0.04 + 0.18 * load, t, 0.06)
-  g.intakeGain.gain.setTargetAtTime(0.015 + 0.09 * throttle + 0.05 * rpmN, t, 0.05)
+  g.intakeGain.gain.setTargetAtTime(0.015 + 0.09 * throttle + 0.05 * revN, t, 0.05)
 
   // ---------- level: idle never falls silent ----------
-  const eng = 0.1 + 0.26 * throttle + 0.13 * rpmN + Math.min(speed / 190, 1) * 0.05
+  const eng = 0.1 + 0.26 * throttle + 0.13 * revN + Math.min(speed / 190, 1) * 0.05
   g.engineGain.gain.setTargetAtTime(eng * 0.62, t, 0.05)
 
   // ---------- skid ----------
@@ -430,11 +496,7 @@ export function update(): void {
   g.skidGain.gain.setTargetAtTime(slipAmt * 0.2 * Math.min(1, speed / 40), t, 0.045)
   g.skidBp.frequency.setTargetAtTime(700 + 2100 * telemetry.slip, t, 0.06)
 
-  // ---------- wind + road ----------
-  const sp = Math.min(1, speed / 150)
-  g.windBp.frequency.setTargetAtTime(820 + 24 * speed, t, 0.1)
-  g.windGain.gain.setTargetAtTime(Math.pow(sp, 1.6) * 0.1, t, 0.08)
-
+  // ---------- road ----------
   const rough = telemetry.onRoad ? 1 : 1.8
   g.roadGain.gain.setTargetAtTime(grounded ? Math.min(1, speed / 120) * 0.055 * rough : 0, t, 0.06)
   g.roadLp.frequency.setTargetAtTime(telemetry.onRoad ? 230 : 380, t, 0.15)
@@ -646,6 +708,29 @@ export function playLanding(intensity: number): void {
   const i = clamp(intensity, 0, 1)
   thump(0.1 + 0.22 * i, 95, 38, 0.3)
   noiseBurst(0.09 * i, 900, 0.8, 0.11)
+}
+
+/**
+ * A trick landed. A bright ascending sparkle up the pentatonic, longer and
+ * fuller the bigger the trick. Sits under the shard chime in weight so a whole
+ * combo chaining does not out-shout the engine - volume-respectful by design.
+ * `points` is the trick's score; the run grows from 2 notes up to 5 for a
+ * show-off, with a low bloom left ringing under the biggest ones.
+ */
+export function playTrick(points: number): void {
+  const g = G
+  if (!g) return
+  const t = g.ctx.currentTime + 0.002
+  dbg.tricks++
+  const big = clamp01(points / 500) //     0..1 how show-off this was
+  const steps = 2 + Math.round(big * 3) //  2..5 notes
+  for (let i = 0; i < steps; i++) {
+    const at = t + i * 0.058
+    const hz = semi(G5, PENTATONIC[Math.min(i + 1, PENTATONIC.length - 1)])
+    bell(hz, at, 0.17 + 0.11 * big, 0.3)
+    tone('triangle', hz * 2, at, 0.045 + 0.035 * big, 0.16) // shimmer an octave up
+  }
+  if (big > 0.6) tone('sine', G5 / 4, t, 0.1, 0.7) // the weight of a big one
 }
 
 /** All ten shards. A five-note run with a chord left ringing under it. */

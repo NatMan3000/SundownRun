@@ -23,6 +23,7 @@ import { vehicleSignals } from '../vehicle/vehicleSignals'
 import * as audio from '../audio/AudioEngine'
 import { HUD_CSS } from './hudStyles'
 import { IntroCard } from './IntroCard'
+import { TrickHud } from './TrickHud'
 import { formatLap } from './format'
 
 /** Text writes per second. The eye cannot read a 60Hz speedo anyway. */
@@ -350,6 +351,8 @@ export function HUD() {
           </>
         )}
       </div>
+
+      <TrickHud />
 
       <IntroCard />
     </div>

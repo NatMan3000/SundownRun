@@ -1,0 +1,269 @@
+// ============================================================
+//  TRICK DETECTION - jumps, spins, flips, rolls, clean landings
+// ------------------------------------------------------------
+//  Hangs off the physics step exactly like the ghost recorder
+//  (ghost.ts) and reports through the frozen contract seam in
+//  core/tricks.ts: emitTrick() per landed trick, commitCombo()
+//  with the chain total on a clean landing.
+//
+//  ONE AIR SESSION = ONE COMBO CHAIN. Takeoff (all four wheels
+//  leave the ground) opens a session; the first wheel back down
+//  closes it. Everything the car did in between is scored AT the
+//  landing, not mid-air - which is the only way "a crash voids
+//  the combo" can be honest: emitTrick already banks its points,
+//  so we cannot award a 360 in the air and then un-award it when
+//  the car lands on its roof. Score on touchdown, know the outcome.
+//
+//  WHY INTEGRATE ANGULAR RATE, not a quaternion delta. A trick is
+//  a WINDING NUMBER - a 720 is two full turns, not zero. The delta
+//  between takeoff and landing orientation only yields the NET
+//  0..360, so a double spin reads as whatever fraction is left over.
+//  Integrating the body-frame yaw / pitch / roll rate each step
+//  counts the turns properly. It is also cheaper than quaternion
+//  math: three dot products and three scalar adds per step, no
+//  temps, no allocation - the ghost.ts standard.
+//
+//  HOT PATH: when the car is on the ground this is a single boolean
+//  test and return. Airborne, it is the three dots above. The only
+//  allocation anywhere is the label strings built on a landing, and
+//  a landing is an event, not a frame - same posture as ghost.commit.
+// ============================================================
+
+import * as THREE from 'three'
+import { CONFIG } from '../core/config'
+import { commitCombo, emitTrick } from '../core/tricks'
+import { DT } from './tuning'
+
+const TWO_PI = Math.PI * 2
+const RAD2DEG = 180 / Math.PI
+
+// ---------- tuning: what counts, and what it is worth ----------
+
+/** Below this hang time the whole session is a kerb bump - scored as nothing. */
+const MIN_AIR_S = 0.4
+/** up.y at the landing step. At/above this the car came down on its wheels. */
+const UPRIGHT_MIN = 0.5
+
+/** Air tiers by hang time, highest first. Only the top tier reached is emitted. */
+const AIR_TIERS: ReadonlyArray<readonly [number, number, string]> = [
+  [2.4, 450, 'TO THE MOON'],
+  [1.7, 260, 'HUGE AIR'],
+  [1.1, 120, 'BIG AIR'],
+  [0.6, 40, 'AIR'],
+]
+
+const SPIN_HALF_PTS = 100 //  per 180 degrees of spin
+const FLIP_PTS = 250 //       per full front/back flip
+const ROLL_PTS = 250 //       per full barrel roll
+const CLEAN_BONUS = 50 //     flat reward for landing it at all
+/** Extra fraction of the chain total per trick beyond the first - chains pay off. */
+const COMBO_RATE = 0.25
+
+// ---------- live debug state (mutable singleton, DevTools reads it) ----------
+// Same discipline as core/telemetry.ts and ghost.ts: mutate in place, never replace.
+// Lets a checker watch the rotation build mid-air and prove detection without a HUD.
+export const trickState = {
+  airborne: false,
+  airSeconds: 0,
+  spinDeg: 0, //  signed degrees of yaw accumulated this air session
+  flipDeg: 0, //  signed degrees of pitch (+ back, - front)
+  rollDeg: 0, //  signed degrees of roll
+}
+
+// ---------- classification (pure - unit-testable without a physics step) ----------
+
+export interface LandingTricks {
+  /** How many distinct tricks qualified. Zero means "just a hop". */
+  links: number
+  airLabel: string
+  airPoints: number
+  spinLabel: string
+  spinPoints: number
+  flipLabel: string
+  flipPoints: number
+  rollLabel: string
+  rollPoints: number
+}
+
+function multi(n: number, base: string): string {
+  if (n <= 1) return base
+  if (n === 2) return 'DOUBLE ' + base
+  if (n === 3) return 'TRIPLE ' + base
+  return `${n}x ${base}`
+}
+
+/**
+ * Turn a finished air session (hang time + accumulated body-frame rotation, all
+ * radians) into the tricks it earned. Pure: no side effects, so a headless test
+ * can assert the taxonomy directly. Called once per landing, never per frame.
+ */
+export function classifyLanding(
+  airSeconds: number,
+  yaw: number,
+  pitch: number,
+  roll: number
+): LandingTricks {
+  let airLabel = ''
+  let airPoints = 0
+  for (let i = 0; i < AIR_TIERS.length; i++) {
+    if (airSeconds >= AIR_TIERS[i][0]) {
+      airPoints = AIR_TIERS[i][1]
+      airLabel = AIR_TIERS[i][2]
+      break
+    }
+  }
+
+  const spinHalves = Math.floor(Math.abs(yaw) / Math.PI)
+  const spinPoints = spinHalves * SPIN_HALF_PTS
+  const spinLabel = spinHalves > 0 ? `${spinHalves * 180} SPIN` : ''
+
+  // + pitch rate lifts the nose (see the basis derivation in useVehiclePhysics):
+  // nose-over-backwards is a backflip, nose-down-forwards is a front flip.
+  const flipN = Math.floor(Math.abs(pitch) / TWO_PI)
+  const flipPoints = flipN * FLIP_PTS
+  const flipLabel = flipN > 0 ? multi(flipN, pitch < 0 ? 'FRONT FLIP' : 'BACKFLIP') : ''
+
+  const rollN = Math.floor(Math.abs(roll) / TWO_PI)
+  const rollPoints = rollN * ROLL_PTS
+  const rollLabel = rollN > 0 ? multi(rollN, 'BARREL ROLL') : ''
+
+  let links = 0
+  if (airPoints > 0) links++
+  if (spinPoints > 0) links++
+  if (flipPoints > 0) links++
+  if (rollPoints > 0) links++
+
+  return {
+    links,
+    airLabel,
+    airPoints,
+    spinLabel,
+    spinPoints,
+    flipLabel,
+    flipPoints,
+    rollLabel,
+    rollPoints,
+  }
+}
+
+/** Emit a finished session's tricks through the contract. Clean lands, crash voids. */
+function scoreLanding(airSeconds: number, yaw: number, pitch: number, roll: number, clean: boolean): void {
+  const r = classifyLanding(airSeconds, yaw, pitch, roll)
+  if (r.links === 0) return // a nothing-hop: no trick, and so no combo to void either
+
+  if (!clean) {
+    // Landed on the roof / mid-flip / on its side. The chain is lost - zero points,
+    // no commit - but the player still gets told, so a bail reads as a bail.
+    emitTrick('WIPEOUT', 0, 1)
+    return
+  }
+
+  let combo = 0
+  let total = 0
+  if (r.airPoints > 0) {
+    emitTrick(r.airLabel, r.airPoints, ++combo)
+    total += r.airPoints
+  }
+  if (r.spinPoints > 0) {
+    emitTrick(r.spinLabel, r.spinPoints, ++combo)
+    total += r.spinPoints
+  }
+  if (r.flipPoints > 0) {
+    emitTrick(r.flipLabel, r.flipPoints, ++combo)
+    total += r.flipPoints
+  }
+  if (r.rollPoints > 0) {
+    emitTrick(r.rollLabel, r.rollPoints, ++combo)
+    total += r.rollPoints
+  }
+
+  // The chain bonus is where stringing tricks together stops being additive and
+  // starts being exciting: a three-trick clean landing is worth half again its parts.
+  const comboBonus = r.links >= 2 ? Math.round(total * COMBO_RATE * (r.links - 1)) : 0
+  const bonus = CLEAN_BONUS + comboBonus
+  emitTrick(r.links >= 2 ? `COMBO x${r.links}!` : 'CLEAN', bonus, ++combo)
+  total += bonus
+
+  commitCombo(total)
+}
+
+// ---------- the detector (singleton - there is one car) ----------
+
+class TrickDetector {
+  private active = false
+  private airSteps = 0
+  private yaw = 0 //   accumulated body-frame rotation, radians
+  private pitch = 0
+  private roll = 0
+
+  /**
+   * Abandon the session in progress without scoring it. Called from every teleport
+   * path (reset / restart / NaN recovery) - the car did not really land, so a jump
+   * that a reset interrupts must never post a phantom trick on the next grounded step.
+   */
+  cancel(): void {
+    this.active = false
+    this.airSteps = 0
+    this.yaw = 0
+    this.pitch = 0
+    this.roll = 0
+    trickState.airborne = false
+    trickState.airSeconds = 0
+    trickState.spinDeg = 0
+    trickState.flipDeg = 0
+    trickState.rollDeg = 0
+  }
+
+  /**
+   * Fed once per 60Hz physics step with the current airborne flag and the chassis
+   * basis + world-frame angular velocity. Grounded: one boolean and out. Airborne:
+   * three dot products and three adds. No allocation until a landing is scored.
+   */
+  update(
+    airborne: boolean,
+    up: THREE.Vector3,
+    fwd: THREE.Vector3,
+    right: THREE.Vector3,
+    angvel: THREE.Vector3
+  ): void {
+    if (!CONFIG.tricks) {
+      if (this.active) this.cancel()
+      return
+    }
+
+    if (airborne) {
+      if (!this.active) {
+        this.active = true
+        this.airSteps = 0
+        this.yaw = 0
+        this.pitch = 0
+        this.roll = 0
+      }
+      this.airSteps++
+      // Body-frame rates: yaw about the car's up (spin), pitch about its right
+      // (flip), roll about its forward (barrel roll). Integrated => turns, not angle.
+      this.yaw += angvel.dot(up) * DT
+      this.pitch += angvel.dot(right) * DT
+      this.roll += angvel.dot(fwd) * DT
+      trickState.airborne = true
+      trickState.airSeconds = this.airSteps * DT
+      trickState.spinDeg = this.yaw * RAD2DEG
+      trickState.flipDeg = this.pitch * RAD2DEG
+      trickState.rollDeg = this.roll * RAD2DEG
+      return
+    }
+
+    // Just touched down - close the session and score it.
+    if (this.active) {
+      const airSeconds = this.airSteps * DT
+      const clean = up.y >= UPRIGHT_MIN
+      const yaw = this.yaw
+      const pitch = this.pitch
+      const roll = this.roll
+      this.cancel()
+      if (airSeconds >= MIN_AIR_S) scoreLanding(airSeconds, yaw, pitch, roll, clean)
+    }
+  }
+}
+
+export const trickDetector = new TrickDetector()

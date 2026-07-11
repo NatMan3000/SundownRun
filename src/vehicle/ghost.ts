@@ -43,7 +43,44 @@ const MAX_SECONDS = 300
 const MAX_SAMPLES = REC_HZ * MAX_SECONDS // 6000 - buffers sized once, never grown
 
 const STORAGE_KEY = 'sundown-run.ghostLap'
-const TRACE_VERSION = 1
+// Bumped to 2 when the start/finish line moved to START_LINE_T: a trace recorded
+// against the old line geometry is not comparable, so loadGhost() below rejects any
+// version mismatch and the old ghost is silently dropped.
+const TRACE_VERSION = 2
+
+// ---------- start-line move: one-shot wipe of stale persisted records ----------
+//
+// Moving the start/finish line (START_LINE_T in terrain.ts) invalidates every
+// persisted record: a bestLapMs and a ghost trace were both measured against the old
+// line, and there is no honest way to compare them to laps timed against the new one.
+// Nathan's call: old times simply do not carry over. So the first boot after the move
+// wipes them ONCE, guarded by an epoch marker. Bump START_LINE_EPOCH whenever the line
+// moves again.
+//
+// This lives on the vehicle side (store.ts is not ours to edit). It clears the stored
+// values AND resets the already-loaded in-memory bestLapMs via the store's public
+// setState - store.ts reads localStorage at module-init, before this runs, so clearing
+// storage alone would leave the stale best sitting in memory until a reload.
+const START_LINE_EPOCH = 2
+const EPOCH_KEY = 'sundown-run.lapEpoch'
+
+function migrateStaleRecords(): void {
+  try {
+    const seen = parseInt(localStorage.getItem(EPOCH_KEY) ?? '', 10)
+    if (seen === START_LINE_EPOCH) return
+    localStorage.removeItem('sundown-run.bestLapMs')
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.setItem(EPOCH_KEY, String(START_LINE_EPOCH))
+    // Correct the value store.ts already loaded this session (import order: store
+    // initialises before this module, so its bestLapMs is the stale one right now).
+    useGameStore.setState({ bestLapMs: null })
+  } catch {
+    // storage unavailable (private mode) - nothing persisted to migrate anyway
+  }
+}
+
+// Runs once, at first import of this module (the vehicle physics pulls it in at boot).
+migrateStaleRecords()
 
 /**
  * A finished best-lap trace, ready to replay. Positions and quaternions are

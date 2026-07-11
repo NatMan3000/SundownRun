@@ -50,6 +50,15 @@ export interface RockCollider {
   y: number
   z: number
   r: number
+  /**
+   * Bouncy-mode dome (CONFIG.bouncyRocks). A ball the width of the rock's girth, buried
+   * so its crown meets the visible boulder top and its centre sits BELOW ground. Contact
+   * with the car happens on the upper hemisphere, so the surface normal tilts up: a
+   * glancing hit rides up the curve and launches, a square hit still costs speed. Paired
+   * with low friction + high restitution in Colliders.tsx - geometry, not an impulse hack.
+   */
+  bounceR: number
+  bounceY: number
 }
 
 export interface Scatter {
@@ -380,12 +389,17 @@ export function getScatter(): Scatter {
   for (const r of rocks) {
     if (r.sy < ROCK_COLLIDER_MIN_SY) continue
     if (Math.hypot(r.x, r.z) > maxR) continue
-    rockColliders.push({
-      x: r.x,
-      y: r.y - r.sy * 0.32 + Math.min(r.sx, r.sz) * 0.2,
-      z: r.z,
-      r: Math.min(r.sx, r.sz) * 0.85,
-    })
+    const hr = Math.min(r.sx, r.sz) //           the rock's horizontal half-extent
+    const ballY = r.y - r.sy * 0.32 + hr * 0.2 // today's sunk ball, unchanged
+    const ballR = hr * 0.85
+    // Bouncy dome: girth-wide, crown at the visible top, centre dropped at least 0.3 m
+    // under the ground so the exposed cap reads as a ride-up ramp from every angle.
+    const vtop = r.y + r.sy * 0.68 //            approx crown of the visible boulder
+    const bounceR = hr
+    let bounceY = vtop - bounceR
+    const maxCenter = r.y - 0.3
+    if (bounceY > maxCenter) bounceY = maxCenter
+    rockColliders.push({ x: r.x, y: ballY, z: r.z, r: ballR, bounceR, bounceY })
   }
 
   cache = { treesA, treesB, treesC, rocks, grass, grassCount, rockColliders }

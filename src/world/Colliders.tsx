@@ -8,10 +8,12 @@ import {
   type HeightfieldArgs,
 } from '@react-three/rapier'
 import { WORLD_SIZE } from '../core/terrain'
+import { CONFIG } from '../core/config'
 import { BOUNDARY, CATCH_FLOOR, boundarySegments } from './boundary'
 import { TERRAIN_RES, getRapierHeights } from './heightfield'
 import { getScatter } from './scatter'
 import { START_LINE_POSTS } from './StartLine'
+import { RIDGE_ARCH_POSTS } from './RidgeArches'
 import { getTreeBodies, resetTreeSmash, stepTreeSmash } from './treeSmash'
 
 // ============================================================
@@ -32,6 +34,7 @@ import { getTreeBodies, resetTreeSmash, stepTreeSmash } from './treeSmash'
 function ObstacleColliders() {
   const { world, rapier } = useRapier()
   const { rockColliders } = getScatter()
+  const bouncyRocks = CONFIG.bouncyRocks
 
   useEffect(() => {
     const trees = getTreeBodies()
@@ -47,11 +50,24 @@ function ObstacleColliders() {
       t.collider = world.createCollider(desc, body)
     }
 
+    // CONFIG.bouncyRocks reshapes the rock collision instead of adding an impulse hack.
+    // Bouncy: a proud, girth-wide dome (upper-hemisphere contact -> up-tilted normals) with
+    // low friction so the car rides up and high restitution so it launches - and both are
+    // forced to WIN the material combine, so the bounce belongs to the rock regardless of
+    // the car's own friction/restitution. Off: today's grippy sunk ball.
+    const bouncy = bouncyRocks
     for (const r of rockColliders) {
-      const desc = rapier.ColliderDesc.ball(r.r)
-        .setTranslation(r.x, r.y, r.z)
-        .setFriction(0.9)
-        .setRestitution(0.15)
+      const desc = bouncy
+        ? rapier.ColliderDesc.ball(r.bounceR)
+            .setTranslation(r.x, r.bounceY, r.z)
+            .setFriction(0.12)
+            .setFrictionCombineRule(rapier.CoefficientCombineRule.Min)
+            .setRestitution(0.75)
+            .setRestitutionCombineRule(rapier.CoefficientCombineRule.Max)
+        : rapier.ColliderDesc.ball(r.r)
+            .setTranslation(r.x, r.y, r.z)
+            .setFriction(0.9)
+            .setRestitution(0.15)
       world.createCollider(desc, body)
     }
 
@@ -61,7 +77,9 @@ function ObstacleColliders() {
       for (const t of trees) t.collider = null
       world.removeRigidBody(body)
     }
-  }, [world, rapier, rockColliders])
+    // CONFIG.bouncyRocks is in the deps so a kid toggling it in config.ts rebuilds the
+    // rock colliders on the spot.
+  }, [world, rapier, rockColliders, bouncyRocks])
 
   // Runs immediately before every world.step(), which is the whole trick: a trunk the
   // car is about to reach at speed is disabled BEFORE any contact is solved.
@@ -108,6 +126,19 @@ export function Colliders() {
         {START_LINE_POSTS.map((p, i) => (
           <CuboidCollider
             key={`p${i}`}
+            args={[p.halfX, p.halfY, p.halfZ]}
+            position={[p.x, p.y, p.z]}
+            rotation={[0, p.rotY, 0]}
+            friction={0.6}
+            restitution={0.2}
+          />
+        ))}
+
+        {/* Ridge gate posts. The gap between each pair is the drivable line; the posts
+            are solid so a clipped shoulder actually clips. */}
+        {RIDGE_ARCH_POSTS.map((p, i) => (
+          <CuboidCollider
+            key={`a${i}`}
             args={[p.halfX, p.halfY, p.halfZ]}
             position={[p.x, p.y, p.z]}
             rotation={[0, p.rotY, 0]}

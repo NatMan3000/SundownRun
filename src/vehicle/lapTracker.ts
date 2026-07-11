@@ -1,15 +1,18 @@
 // ============================================================
 //  LAP VALIDITY
 // ------------------------------------------------------------
-//  The road is a closed loop and the start line is spline t = 0.
+//  The road is a closed loop and the start line is spline t =
+//  START_LINE_T (terrain.ts owns that value; the painted line and the
+//  timing here BOTH key off it, so moving it moves the whole lap).
 //  A raw line crossing is not a lap - two things have to be true:
 //
 //  SECTORS (was it a real lap?)
-//    Eight invisible checkpoints sit at t = k/8. They are marked as
-//    the car's nearest-t sweeps FORWARD through them. All eight must
-//    be behind you when you cross the line, or the lap is voided.
-//    This is what kills the tiny-circle-over-the-line exploit: a car
-//    orbiting t=0 crosses the line all day and never touches t=1/8.
+//    Eight invisible checkpoints sit at t = START_LINE_T + k/8 (mod 1).
+//    They are marked as the car's nearest-t sweeps FORWARD through them.
+//    All eight must be behind you when you cross the line, or the lap is
+//    voided. This is what kills the tiny-circle-over-the-line exploit: a
+//    car orbiting the line crosses it all day and never touches the far
+//    checkpoints. Checkpoint 0 sits ON the line.
 //
 //  DIRTY (was it a fair lap?)
 //    Cumulative off-road time is accrued across the lap. Past 3s the
@@ -28,10 +31,22 @@
 // ============================================================
 
 import { useGameStore } from '../core/store'
+import { START_LINE_T } from '../core/terrain'
 import { ghostRecorder } from './ghost'
 import { LAP } from './tuning'
 
 const SECTORS = LAP.sectors
+
+// The start line is spline t = START_LINE_T, not necessarily 0. All lap geometry is
+// expressed relative to it: checkpoint k lives at (START_LINE_T + k/SECTORS) mod 1,
+// and checkpoint 0 is the line itself. With START_LINE_T = 0 this reduces exactly to
+// the old "line at t=0, checkpoints at k/8" scheme, so the offset is transparent.
+const START = ((START_LINE_T % 1) + 1) % 1
+
+/** Spline t of the kth ordered checkpoint, wrapped into [0,1). k=0 is the line. */
+function checkpointT(k: number): number {
+  return (START + k / SECTORS) % 1
+}
 
 /**
  * Live lap-validity state. MUTABLE SINGLETON, same discipline as core/telemetry.ts -
@@ -112,7 +127,7 @@ export class LapTracker {
     const delta = (t - prev + 1) % 1
     if (delta > 0 && delta <= LAP.maxSectorJump) {
       this.markSectors(prev, delta)
-      const arcToLine = this.arcTo(prev, 0)
+      const arcToLine = this.arcTo(prev, START)
       if (arcToLine > 0 && arcToLine <= delta) this.onLineCrossed(nowMs, t)
     }
 
@@ -123,7 +138,7 @@ export class LapTracker {
   private markSectors(prev: number, delta: number): void {
     for (let k = 0; k < SECTORS; k++) {
       if (this.passed[k]) continue
-      const a = this.arcTo(prev, k / SECTORS)
+      const a = this.arcTo(prev, checkpointT(k))
       if (a > 0 && a <= delta) this.passed[k] = true
     }
   }
