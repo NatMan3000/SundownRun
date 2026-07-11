@@ -3,24 +3,23 @@ import * as THREE from 'three'
 import { getTerrainHeight } from '../core/terrain'
 
 // ============================================================
-// RIDGE ARCHES - a thread-the-gate run on the switchback spine
+// STONE GATES - thread-the-monolith targets
 //
-// Three weathered timber gates straddling the ridge between the switchback legs. They
-// reshape nothing (unlike the terrain playgrounds) - just posts to thread and a checkered
-// banner that echoes the start gantry, so the ridge reads as a place a kid is meant to
-// play. Posts are solid (colliders in Colliders.tsx); the gap between them is the line.
+// Three pairs of balanced sandstone hoodoos, one guarding a jump approach in each
+// corner of the playground. They reshape nothing (unlike the terrain playgrounds) -
+// natural-looking stacked-slab pillars whose gap is the scored line (archGates.ts).
+// The old timber-and-checker gantries read as start lines dropped in the middle of
+// nowhere (Nathan, playtest round 4); pillars read as landscape.
 //
 // One merged mesh, one draw call, zero per-frame work - built once at mount.
+// Pillars are solid - colliders in Colliders.tsx.
 // ============================================================
 
-const POST_HALF = 0.16
-const POST_HEIGHT = 4.6
-const BEAM_DROP = 0.25
+/** Pillar footprint half-width (base course) and total standing height. */
+const PILLAR_HALF = 0.85
+const PILLAR_HEIGHT = 5.0
 
-const TIMBER = new THREE.Color('#6B4F35')
-const TIMBER_LIT = new THREE.Color('#8A6A48')
-const CREAM = new THREE.Color('#D8C9A8')
-const CHAR = new THREE.Color('#2E2A27')
+const AXIS_Y = new THREE.Vector3(0, 1, 0)
 
 export interface ArchDef {
   x: number
@@ -65,18 +64,18 @@ export const RIDGE_ARCH_POSTS = (() => {
   for (const a of RIDGE_ARCHES) {
     const [ax, az] = acrossOf(a.heading)
     for (const side of [1, -1]) {
-      const lat = (a.halfGap + POST_HALF) * side
+      const lat = (a.halfGap + 0.6) * side
       const x = a.x + ax * lat
       const z = a.z + az * lat
       const g = getTerrainHeight(x, z)
       posts.push({
         x,
-        y: g + POST_HEIGHT / 2,
+        y: g + PILLAR_HEIGHT / 2,
         z,
         rotY: a.heading,
-        halfX: POST_HALF,
-        halfY: POST_HEIGHT / 2,
-        halfZ: POST_HALF,
+        halfX: PILLAR_HALF * 0.85, // a touch inside the visual slabs, so clips feel fair
+        halfY: PILLAR_HEIGHT / 2,
+        halfZ: PILLAR_HALF * 0.8,
       })
     }
   }
@@ -162,27 +161,36 @@ function buildArches(): THREE.BufferGeometry {
     const right = new THREE.Vector3(ax, 0, az) //                 across the gate
     const fwd = new THREE.Vector3(Math.cos(a.heading), 0, Math.sin(a.heading)) // along the thread
 
-    const g0 = getTerrainHeight(a.x + ax * a.halfGap, a.z + az * a.halfGap)
-    const g1 = getTerrainHeight(a.x - ax * a.halfGap, a.z - az * a.halfGap)
-    const gTop = Math.max(g0, g1) + POST_HEIGHT
-
-    // the two posts
+    // Two weathered stone monoliths flanking the gap - stacked slabs, each course a
+    // touch smaller and twisted off the one below, the way desert hoodoos balance.
+    // No beam, no checker: these read as landscape, not race furniture. The gap
+    // between them is still the scored line (archGates.ts is unchanged).
     for (const side of [1, -1]) {
-      const lat = (a.halfGap + POST_HALF) * side
+      const lat = (a.halfGap + 0.6) * side
       const px = a.x + ax * lat
       const pz = a.z + az * lat
       const g = getTerrainHeight(px, pz)
-      box(pos, cols, px, g + POST_HEIGHT / 2, pz, POST_HALF, POST_HEIGHT / 2, POST_HALF, right, fwd, TIMBER, TIMBER_LIT)
-    }
-    // crossbeam spanning the post tops
-    box(pos, cols, a.x, gTop - BEAM_DROP, a.z, a.halfGap + POST_HALF, 0.2, 0.28, right, fwd, TIMBER, TIMBER_LIT)
-    // a checkered banner hanging under the beam, echoing the start gantry
-    const banners = 10
-    const bw = (a.halfGap + POST_HALF) / banners
-    for (let i = 0; i < banners; i++) {
-      const lat = -(a.halfGap + POST_HALF) + (i * 2 + 1) * bw
-      const c = i % 2 === 0 ? CREAM : CHAR
-      box(pos, cols, a.x + ax * lat, gTop - BEAM_DROP - 0.55, a.z + az * lat, bw, 0.3, 0.04, right, fwd, c, c)
+      // deterministic per-pillar variation from position - no RNG, identical every build
+      const seed = Math.abs(Math.sin(px * 12.9898 + pz * 78.233)) * 43758.5453
+      const jitter = (k: number) => (((seed * (k + 1)) % 1) - 0.5)
+      const courses = 4
+      let y = g
+      for (let c = 0; c < courses; c++) {
+        const t = c / (courses - 1)
+        const hh = 0.75 - t * 0.18 //          course half-height, shorter toward the top
+        const hw = 0.85 - t * 0.38 //          course half-width, tapering
+        const twist = jitter(c) * 0.5
+        const cr = new THREE.Vector3().copy(right).applyAxisAngle(AXIS_Y, twist)
+        const cf = new THREE.Vector3().copy(fwd).applyAxisAngle(AXIS_Y, twist)
+        const ox = jitter(c + 7) * 0.22
+        const oz = jitter(c + 13) * 0.22
+        // warm sandstone, sun-bleached top faces, darker base course
+        const shade = 0.82 + t * 0.16
+        const base = new THREE.Color(shade * 0.78, shade * 0.7, shade * 0.6)
+        const litc = new THREE.Color(shade * 0.92, shade * 0.84, shade * 0.7)
+        box(pos, cols, px + ox, y + hh, pz + oz, hw, hh, hw * 0.92, cr, cf, base, litc)
+        y += hh * 2 - 0.1 // slight overlap so no daylight between courses
+      }
     }
   }
 
