@@ -89,7 +89,7 @@ function gaussUV(u: number, v: number, su: number, sv: number): number {
 // well inside the rim, and none of them is near either of the two hidden sun shards
 // (world/Delights.tsx puts those 24 m and 42 m off the road).
 
-export type PlaygroundKind = 'kicker' | 'double' | 'bowl' | 'table' | 'ramp'
+export type PlaygroundKind = 'kicker' | 'double' | 'bowl' | 'table' | 'ramp' | 'bigair'
 
 export interface Playground {
   x: number
@@ -155,6 +155,18 @@ export const PLAYGROUNDS: readonly Playground[] = [
     what: 'ridge run, launch 2 - land the first, line up the second',
   },
 
+  // ---------- big-air hills: turn-around mounds at the foot of the east and west walls ----------
+  // Heading points INWARD (the direction you ride them). The big hill's far skirt leans
+  // against the foothill base, so climbing the wall and turning around drops you onto it.
+  {
+    x: 606, z: 137, heading: 3.363, kind: 'bigair', reach: 210,
+    what: 'east big-air hill - bomb down off the wall, through the dip, off the little mountain',
+  },
+  {
+    x: -608, z: 66, heading: -0.107, kind: 'bigair', reach: 210,
+    what: 'west big-air hill - the same dare, sunset side',
+  },
+
   // ---------- rim kickers: jumps out on the valley-edge benches, under the mountains ----------
   // Sitting on the flat shelf just inside the rim foot (rim height ~0-6 m here, so the
   // ground is still drivable), each throws you back toward the infield. They give the
@@ -197,6 +209,15 @@ function playgroundHeight(x: number, z: number): number {
       // tight launch kicker: 8 m up over a short run, then the ground drops away so you
       // land on a downslope. Narrow across-axis (16) keeps it clear of flanking roads.
       h += 8 * gaussUV(u, v, 15, 16) - 3.5 * gaussUV(u - 36, v, 24, 20)
+    } else if (p.kind === 'bigair') {
+      // Nathan's spec, near-verbatim: a big hill near the bottom of the outside wall.
+      // Climb it, turn around, bomb down into a dip that hoses straight back up as a
+      // small mountain - the upslope is the ramp, speed is the trick. All broad
+      // gaussians, so the whole thing is glass-smooth at collider-lattice scale.
+      h +=
+        30 * gaussUV(u + 60, v, 45, 55) - //  the big turnaround hill
+        7 * gaussUV(u - 15, v, 20, 34) + //   the dip that loads the launch
+        16 * gaussUV(u - 75, v, 24, 36) //    the small mountain you fly off
     } else {
       // flat top between two steep ramps
       h += 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
@@ -247,6 +268,11 @@ function playgroundHeightOne(p: Playground, dx: number, dz: number): number {
     return -6.5 * gaussUV(u, v, 30, 30) + 2.4 * Math.exp(-((r - 40) * (r - 40)) / 242)
   }
   if (p.kind === 'ramp') return 8 * gaussUV(u, v, 15, 16) - 3.5 * gaussUV(u - 36, v, 24, 20)
+  if (p.kind === 'bigair') {
+    return (
+      30 * gaussUV(u + 60, v, 45, 55) - 7 * gaussUV(u - 15, v, 20, 34) + 16 * gaussUV(u - 75, v, 24, 36)
+    )
+  }
   return 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
 }
 
@@ -367,27 +393,14 @@ interface AirRunSpec {
   landHalf: number // half-width of the landing runway (wider than the chute - land off-line and stay clean)
 }
 
-/** The runs. Opposite corners so they spread across the map edge, not cluster. */
-export const AIR_RUN_SPECS: readonly AirRunSpec[] = [
-  {
-    name: 'Sundown Leap',
-    bearing: Math.PI / 4, //         NE corner
-    rPad: 782, padR: 15, rLaunch: 690,
-    rEntry: 648, entryDeg: 17,
-    laneHalf: 12, padLift: 26, outLen: 24,
-    rise: 8.5, run: 15, dropAt: 28, drop: 4.5, dropRun: 14,
-    landLen: 92, landHalf: 15,
-  },
-  {
-    name: 'Gulch Bomb',
-    bearing: (5 * Math.PI) / 4, //   SW corner
-    rPad: 780, padR: 15, rLaunch: 688,
-    rEntry: 646, entryDeg: -17,
-    laneHalf: 12, padLift: 26, outLen: 24,
-    rise: 8.5, run: 15, dropAt: 28, drop: 4.5, dropRun: 14,
-    landLen: 100, landHalf: 15,
-  },
-]
+/**
+ * RETIRED (playtest, 2026-07-11): the sculpted pad-chute-kicker runs read as a lumpy
+ * mesa with a drop-away edge, not a jump. Their replacement is the 'bigair'
+ * PLAYGROUNDS above - a natural big-hill / dip / small-mountain landform, which is
+ * what Nathan actually asked for. The machinery below (markers, gates, wear, the
+ * flatten pass) all no-ops on an empty spec list and stays for a future run design.
+ */
+export const AIR_RUN_SPECS: readonly AirRunSpec[] = []
 
 /** Public geometry a run needs for its markers, gate and scoring. Derived once. */
 export interface AirRun {
