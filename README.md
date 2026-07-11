@@ -94,6 +94,27 @@ Open `src/core/config.ts`. Every number in there is a knob - car colour, engine
 power, grip, camera, time of day. Change one, save, and the game updates in the
 browser instantly. Start with `carColor`.
 
+### Your own version of the game
+
+You can have TWO copies of the game on your computer:
+
+- **`SundownRun`** - the official one. Run `Get Updates.bat` in here to get the
+  newest jumps and features. Don't build stuff in this one - updates replace it.
+- **`SundownRun-Josh`** - YOURS. Change any file you like, break anything you
+  like. The official copy is never touched, so the game always still works.
+
+To make your copy, open a command window where SundownRun lives and run:
+
+```
+git clone https://github.com/NatMan3000/SundownRun.git SundownRun-Josh
+```
+
+Inside your copy, `Sundown Run.bat` starts YOUR version (close the other game
+window first - they share the same door). And if your code goes properly bad
+and you want a do-over, run `Get Updates.bat` inside YOUR folder - it resets
+your copy back to a perfect fresh version of the official game. (It deletes
+your changes, so it is the big red do-over button, not a save button.)
+
 ## For developers
 
 - `CONSTITUTION.md` - the art direction, performance budget, and feel standard
