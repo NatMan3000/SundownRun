@@ -4,6 +4,7 @@ import { CONFIG } from '../core/config'
 import { WORLD_SIZE } from '../core/terrain'
 import { telemetry } from '../core/telemetry'
 import * as audio from '../audio/AudioEngine'
+import { emitTrick } from '../core/tricks'
 import { getScatter, treeIsReachable, type TreeInstance } from './scatter'
 
 // ============================================================
@@ -228,6 +229,8 @@ function smash(
   t.collider = null
   t.state = 1
   t.t = 0
+  // A felled tree is worth a couple of points - mowing a grove adds up.
+  if (CONFIG.tricks) emitTrick('TIMBER', 2, 1)
   t.px = t.x
   t.py = t.y
   t.pz = t.z
