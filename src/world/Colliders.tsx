@@ -14,7 +14,9 @@ import { TERRAIN_RES, getRapierHeights } from './heightfield'
 import { getScatter } from './scatter'
 import { START_LINE_POSTS } from './StartLine'
 import { RIDGE_ARCH_POSTS } from './RidgeArches'
+import { RIM_RUN_GATE_POSTS } from './RimRuns'
 import { resetArchGates, stepArchGates } from './archGates'
+import { resetRimRunGates, stepRimRunGates } from './rimRunGates'
 import { getTreeBodies, resetTreeSmash, stepTreeSmash } from './treeSmash'
 
 // ============================================================
@@ -41,6 +43,7 @@ function ObstacleColliders() {
     const trees = getTreeBodies()
     resetTreeSmash()
     resetArchGates()
+    resetRimRunGates()
 
     const body = world.createRigidBody(rapier.RigidBodyDesc.fixed())
 
@@ -88,6 +91,7 @@ function ObstacleColliders() {
   useBeforePhysicsStep((w) => {
     stepTreeSmash(w)
     stepArchGates(w)
+    stepRimRunGates(w)
   })
 
   return null
@@ -144,6 +148,18 @@ export function Colliders() {
         {RIDGE_ARCH_POSTS.map((p, i) => (
           <CuboidCollider
             key={`a${i}`}
+            args={[p.halfX, p.halfY, p.halfZ]}
+            position={[p.x, p.y, p.z]}
+            rotation={[0, p.rotY, 0]}
+            friction={0.6}
+            restitution={0.2}
+          />
+        ))}
+
+        {/* Big-air run entrance-gate posts. Gap is the drivable line down the chute. */}
+        {RIM_RUN_GATE_POSTS.map((p, i) => (
+          <CuboidCollider
+            key={`rr${i}`}
             args={[p.halfX, p.halfY, p.halfZ]}
             position={[p.x, p.y, p.z]}
             rotation={[0, p.rotY, 0]}

@@ -154,6 +154,19 @@ export const PLAYGROUNDS: readonly Playground[] = [
     x: 232, z: 226, heading: 0.2, kind: 'ramp', reach: 90,
     what: 'ridge run, launch 2 - land the first, line up the second',
   },
+
+  // ---------- rim kickers: jumps out on the valley-edge benches, under the mountains ----------
+  // Sitting on the flat shelf just inside the rim foot (rim height ~0-6 m here, so the
+  // ground is still drivable), each throws you back toward the infield. They give the
+  // empty edge band something to hit on the way to or from a big-air run.
+  {
+    x: 628, z: 168, heading: 3.4, kind: 'kicker', reach: 130,
+    what: 'east-rim kicker on the bench below the NE mountains - flings you infield',
+  },
+  {
+    x: 560, z: -330, heading: 1.04, kind: 'table', reach: 150,
+    what: 'SE-rim tabletop, run across the bench under the mountains and clear the gap',
+  },
 ]
 
 /** Height these landforms add to the terrain. Zero everywhere outside their reach. */
@@ -208,6 +221,11 @@ export function playgroundWear(x: number, z: number): number {
     const k = Math.min(1, local / 6.0) * (1 - smoothstep01((Math.sqrt(d2) - p.reach * 0.55) / (p.reach * 0.45)))
     if (k > w) w = k
   }
+  // The big-air runs scrape the same dirt: their lanes, pads and landings read as
+  // ridden ground too, so folding them in here clears vegetation and paints the dirt
+  // for free (Terrain.tsx and scatter.ts both key off this one signal).
+  const arw = airRunWear(x, z)
+  if (arw > w) w = arw
   return w
 }
 
@@ -303,6 +321,292 @@ function baseHeight(x: number, z: number): number {
 /** Terrain before the road exists. Useful for anything that must ignore the road cut. */
 export function getBaseHeight(x: number, z: number): number {
   return baseHeight(x, z)
+}
+
+// ============================================================
+// BIG-AIR RUNS - drive up the mountain, turn around, bomb the descent
+// ------------------------------------------------------------
+// Nathan + Josh's ask: a marked line up the inner rim slope to a turnaround pad,
+// a fast graded chute back down, and a big kicker at the bottom that converts the
+// speed into serious hang time. Trick points grow with the square of air time
+// (vehicle/trickDetector.ts), so this is the jackpot moment.
+//
+// Same discipline as the playgrounds and the rim: it is TERRAIN, not props.
+// getTerrainHeight flattens a clean corridor toward a designed straight-line
+// profile (killing the foothill's gully noise so the descent is fast and readable)
+// and adds the launch kicker on top - so the visual mesh and the physics
+// heightfield agree about every centimetre for free.
+//
+// CONTAINMENT (constitution s5): each pad sits LOW on the foothill, ~40 m up where
+// the rim climbs 135 m, so the run never offers a route out of the bowl. The launch
+// fires INWARD, toward the valley; the landing pad is flattened open valley floor,
+// inside the catch-floor's coverage (the whole world). A fast descent cannot tunnel:
+// the chutes run ~25-30% (~15-17 deg), so a 52 m/s car carries under 16 m/s downward,
+// well under the ~28 m/s a rapier heightfield lets through (see boundary.ts).
+// ============================================================
+
+interface AirRunSpec {
+  name: string
+  /** outward radial bearing to the run, radians */
+  bearing: number
+  rPad: number //     pad-centre radius (up the foothill)
+  padR: number //     flat pad radius
+  rLaunch: number //  chute-bottom / kicker radius
+  rEntry: number //   ascent-entrance radius (well inward, down on the valley floor)
+  entryDeg: number // ascent-entrance angular offset from the bearing - splays the up-leg
+  laneHalf: number // corridor half-width
+  outLen: number //   flat run-out inward of the launch, under the takeoff
+  rise: number //     kicker lip height
+  run: number //      kicker rise half-width (gaussian sigma)
+  dropAt: number //   how far inward the drop-away sits
+  drop: number //     drop-away depth
+  dropRun: number //  drop-away half-width
+  landLen: number //  length of the wide landing runway, inward of the launch
+  landHalf: number // half-width of the landing runway (wider than the chute - land off-line and stay clean)
+}
+
+/** The runs. Opposite corners so they spread across the map edge, not cluster. */
+export const AIR_RUN_SPECS: readonly AirRunSpec[] = [
+  {
+    name: 'Sundown Leap',
+    bearing: Math.PI / 4, //         NE corner
+    rPad: 782, padR: 15, rLaunch: 690,
+    rEntry: 648, entryDeg: 17,
+    laneHalf: 6, outLen: 24,
+    rise: 8.5, run: 15, dropAt: 28, drop: 4.5, dropRun: 14,
+    landLen: 92, landHalf: 15,
+  },
+  {
+    name: 'Gulch Bomb',
+    bearing: (5 * Math.PI) / 4, //   SW corner
+    rPad: 780, padR: 15, rLaunch: 688,
+    rEntry: 646, entryDeg: -17,
+    laneHalf: 6, outLen: 24,
+    rise: 8.5, run: 15, dropAt: 28, drop: 4.5, dropRun: 14,
+    landLen: 100, landHalf: 15,
+  },
+]
+
+/** Public geometry a run needs for its markers, gate and scoring. Derived once. */
+export interface AirRun {
+  name: string
+  padx: number
+  padz: number
+  padH: number
+  padR: number
+  /** launch (kicker lip) point + the height of the flattened chute there */
+  lx: number
+  lz: number
+  launchH: number
+  /** unit radial (outward, pad-ward) and tangential axes */
+  rdx: number
+  rdz: number
+  tdx: number
+  tdz: number
+  /** ascent entrance */
+  aex: number
+  aez: number
+  aeH: number
+  /** chute bottom (run-out end, inward of the launch) */
+  cbx: number
+  cbz: number
+  cbH: number
+  /** landing runway: start (just past the kicker) -> end (capped short of the road) */
+  lsx: number
+  lsz: number
+  lsH: number
+  lex: number
+  lez: number
+  leH: number
+  landHalf: number
+  laneHalf: number
+  spec: AirRunSpec
+  cx: number
+  cz: number
+  reach2: number
+}
+
+const RUN_BLEND = 12 //  metres the flatten fades back into the hillside
+const RUNOUT_GRADE = 0.03
+
+let RUNS: AirRun[] | null = null
+
+function ensureRuns(): AirRun[] {
+  if (RUNS) return RUNS
+  const out: AirRun[] = []
+  for (const s of AIR_RUN_SPECS) {
+    const rdx = Math.cos(s.bearing)
+    const rdz = Math.sin(s.bearing)
+    const tdx = -Math.sin(s.bearing)
+    const tdz = Math.cos(s.bearing)
+    const padx = rdx * s.rPad
+    const padz = rdz * s.rPad
+    const padH = getBaseHeight(padx, padz)
+    const lx = rdx * s.rLaunch
+    const lz = rdz * s.rLaunch
+    const launchH = getBaseHeight(lx, lz)
+    const cbx = lx - rdx * s.outLen
+    const cbz = lz - rdz * s.outLen
+    const cbH = launchH - s.outLen * RUNOUT_GRADE
+    // entrance sits inward (low valley floor) and angularly splayed off the chute
+    const eb = s.bearing + (s.entryDeg * Math.PI) / 180
+    const aex = Math.cos(eb) * s.rEntry
+    const aez = Math.sin(eb) * s.rEntry
+    const aeH = getBaseHeight(aex, aez)
+    // landing runway: starts just past the kicker drop, runs inward, ends short of the road
+    const lsx = lx - rdx * 20
+    const lsz = lz - rdz * 20
+    const lsH = launchH - 20 * RUNOUT_GRADE
+    const lex = lx - rdx * s.landLen
+    const lez = lz - rdz * s.landLen
+    const leH = getBaseHeight(lex, lez)
+    // bounding circle for the cheap per-call reject: covers entrance, pad and landing.
+    const cx = (padx + lex) / 2
+    const cz = (padz + lez) / 2
+    let reach = 0
+    for (const [px, pz] of [
+      [padx, padz],
+      [aex, aez],
+      [lex, lez],
+    ] as const) {
+      const d = Math.hypot(px - cx, pz - cz)
+      if (d > reach) reach = d
+    }
+    reach += Math.max(s.landHalf, s.laneHalf) + RUN_BLEND + 4
+    out.push({
+      name: s.name, padx, padz, padH, padR: s.padR,
+      lx, lz, launchH, rdx, rdz, tdx, tdz,
+      aex, aez, aeH, cbx, cbz, cbH,
+      lsx, lsz, lsH, lex, lez, leH, landHalf: s.landHalf,
+      laneHalf: s.laneHalf, spec: s, cx, cz, reach2: reach * reach,
+    })
+  }
+  RUNS = out
+  return out
+}
+
+/** Read-only view of the derived runs, for markers / gates / scoring. */
+export function getAirRuns(): readonly AirRun[] {
+  return ensureRuns()
+}
+
+// Segment projection scratch - module level, never allocated per call.
+let _segT = 0
+function projSeg(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number {
+  const ex = bx - ax
+  const ez = bz - az
+  const len2 = ex * ex + ez * ez || 1e-6
+  let t = ((px - ax) * ex + (pz - az) * ez) / len2
+  t = t < 0 ? 0 : t > 1 ? 1 : t
+  _segT = t
+  const qx = ax + ex * t
+  const qz = az + ez * t
+  const dx = px - qx
+  const dz = pz - qz
+  return Math.sqrt(dx * dx + dz * dz)
+}
+
+/**
+ * Apply the runs to a height already resolved by the road/base pass. Flattens the
+ * ascent leg, the pad, the chute run-out and the landing pad toward their designed
+ * profiles, then adds the launch kicker on top. Runs are >100 m apart, so at most one
+ * ever contributes - the bounding reject makes the common case a single distance test.
+ */
+function airRunSurface(x: number, z: number, hOut: number): number {
+  const runs = ensureRuns()
+  let h = hOut
+  for (let r = 0; r < runs.length; r++) {
+    const run = runs[r]
+    const bx = x - run.cx
+    const bz = z - run.cz
+    if (bx * bx + bz * bz > run.reach2) continue
+
+    // ---- flatten: pick the primitive with the strongest hold on this point ----
+    let bw = 0
+    let bt = 0
+    // chute + run-out: pad -> chute bottom
+    let d = projSeg(x, z, run.padx, run.padz, run.cbx, run.cbz)
+    if (d < run.laneHalf + RUN_BLEND) {
+      const w = 1 - smoothstep01((d - run.laneHalf) / RUN_BLEND)
+      if (w > bw) {
+        bw = w
+        bt = run.padH + (run.cbH - run.padH) * _segT
+      }
+    }
+    // ascent leg: pad -> entrance
+    d = projSeg(x, z, run.padx, run.padz, run.aex, run.aez)
+    if (d < run.laneHalf + RUN_BLEND) {
+      const w = 1 - smoothstep01((d - run.laneHalf) / RUN_BLEND)
+      if (w > bw) {
+        bw = w
+        bt = run.padH + (run.aeH - run.padH) * _segT
+      }
+    }
+    // turnaround pad
+    const cd = Math.hypot(x - run.padx, z - run.padz)
+    if (cd < run.padR + RUN_BLEND) {
+      const w = 1 - smoothstep01((cd - run.padR) / RUN_BLEND)
+      if (w > bw) {
+        bw = w
+        bt = run.padH
+      }
+    }
+    // landing runway - a wide flattened strip so a huge arc lands clean at any speed
+    d = projSeg(x, z, run.lsx, run.lsz, run.lex, run.lez)
+    if (d < run.landHalf + RUN_BLEND) {
+      const w = 1 - smoothstep01((d - run.landHalf) / RUN_BLEND)
+      if (w > bw) {
+        bw = w
+        bt = run.lsH + (run.leH - run.lsH) * _segT
+      }
+    }
+    if (bw > 0) h += (bt - h) * bw
+
+    // ---- the launch kicker, added on top of the flattened chute ----
+    const along = (x - run.lx) * run.rdx + (z - run.lz) * run.rdz //  + = outward / pad-ward
+    const across = (x - run.lx) * run.tdx + (z - run.lz) * run.tdz
+    const sp = run.spec
+    if (
+      Math.abs(across) < run.laneHalf + 2 &&
+      along > -(sp.dropAt + 3 * sp.dropRun) &&
+      along < 4 * sp.run
+    ) {
+      const au = along - sp.run * 0.6 //          lip crest just pad-ward of the launch point
+      let k = sp.rise * Math.exp(-(au * au) / (2 * sp.run * sp.run))
+      const ad = along + sp.dropAt
+      k -= sp.drop * Math.exp(-(ad * ad) / (2 * sp.dropRun * sp.dropRun))
+      const edge = 1 - smoothstep01((Math.abs(across) - (run.laneHalf - 2)) / 3)
+      h += k * edge
+    }
+  }
+  return h
+}
+
+/** 0..1 ridden-ground signal for the runs - drives dirt + vegetation clearing. */
+function airRunWear(x: number, z: number): number {
+  const runs = ensureRuns()
+  let w = 0
+  for (let r = 0; r < runs.length; r++) {
+    const run = runs[r]
+    const bx = x - run.cx
+    const bz = z - run.cz
+    if (bx * bx + bz * bz > run.reach2) continue
+    const half = run.laneHalf
+    let d = projSeg(x, z, run.padx, run.padz, run.cbx, run.cbz)
+    let k = 1 - smoothstep01((d - half * 0.3) / (half * 0.9))
+    if (k > w) w = k
+    d = projSeg(x, z, run.padx, run.padz, run.aex, run.aez)
+    k = 1 - smoothstep01((d - half * 0.3) / (half * 0.9))
+    if (k > w) w = k
+    d = Math.hypot(x - run.padx, z - run.padz)
+    k = 1 - smoothstep01((d - run.padR) / (half * 1.2))
+    if (k > w) w = k
+    // landing runway - a lighter scuff (dirt-flecked grass), not a full dirt scrape
+    d = projSeg(x, z, run.lsx, run.lsz, run.lex, run.lez)
+    k = (1 - smoothstep01((d - run.landHalf * 0.5) / (run.landHalf * 0.6))) * 0.55
+    if (k > w) w = k
+  }
+  return w
 }
 
 // ---------- the circuit ----------
@@ -715,17 +1019,29 @@ function projectRoad(i: number, x: number, z: number): number {
   return Math.sqrt(bestD2)
 }
 
-/** Terrain height (m) at world x,z. Pure + deterministic. Flattens toward the road. */
+/** Terrain height (m) at world x,z. Pure + deterministic. Flattens toward the road,
+ *  then toward any big-air run corridor (airRunSurface is a no-op away from a run). */
 export function getTerrainHeight(x: number, z: number): number {
+  let h: number
   const i = nearestSample(x, z, INFLUENCE + 1)
-  if (i < 0) return baseHeight(x, z)
-  const d = projectRoad(i, x, z)
-  const half = FLATTEN_HALF + _pflare
-  if (d <= half) return _py
-  const b = (d - half) / BLEND
-  if (b >= 1) return baseHeight(x, z)
-  const s = b * b * (3 - 2 * b)
-  return _py * (1 - s) + baseHeight(x, z) * s
+  if (i < 0) {
+    h = baseHeight(x, z)
+  } else {
+    const d = projectRoad(i, x, z)
+    const half = FLATTEN_HALF + _pflare
+    if (d <= half) {
+      h = _py
+    } else {
+      const b = (d - half) / BLEND
+      if (b >= 1) {
+        h = baseHeight(x, z)
+      } else {
+        const s = b * b * (3 - 2 * b)
+        h = _py * (1 - s) + baseHeight(x, z) * s
+      }
+    }
+  }
+  return airRunSurface(x, z, h)
 }
 
 /** Distance (m) from (x,z) to the road centre line, or Infinity beyond `maxDist`. */

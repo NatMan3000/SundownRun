@@ -268,6 +268,7 @@ export function getScatter(): Scatter {
     const x = (rng() - 0.5) * 1900
     const z = (rng() - 0.5) * 1900
     if (roadDistance(x, z, 70) !== Infinity) continue
+    if (playgroundWear(x, z) > 0.12) continue // keep run lanes + jump faces clear to ride
     const sl = slopeAt(x, z)
     if (rng() > 0.12 + sl * 0.9) continue // rocks gather on the steep ground
     const s = 0.5 + Math.pow(rng(), 1.9) * 3.0
@@ -296,6 +297,7 @@ export function getScatter(): Scatter {
     const z = Math.sin(th) * r
     const rim = rimHeightAt(x, z)
     if (rim < 4) continue
+    if (playgroundWear(x, z) > 0.1) continue // a big-air chute cuts through the scree band - keep it clean
     const sl = slopeAt(x, z)
     if (rng() > 0.14 + sl * 0.9) continue
     const s = 0.4 + Math.pow(rng(), 2.4) * 3.4
