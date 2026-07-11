@@ -724,3 +724,11 @@ export function getSpawn(): { position: THREE.Vector3; rotationY: number } {
     rotationY: Math.atan2(tan.x, tan.z),
   }
 }
+
+// ---------- start / finish line position ----------
+/**
+ * Where the start/finish line sits, as road-spline t in [0,1). Lap timing
+ * (vehicle/lapTracker.ts) and the painted line (world/StartLine.tsx) BOTH key
+ * off this - change it here and the whole lap moves together.
+ */
+export const START_LINE_T = 0

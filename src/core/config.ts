@@ -33,6 +33,10 @@ export const CONFIG = {
   treeSmashKmh: 40, //    hit a tree faster than this and it smashes away (slower = solid crunch)
   showFps: false, //      true = show the frames-per-second counter
 
+  // ---------- TRICKS ----------
+  tricks: true, //        true = score points for jumps, spins and flips
+  bouncyRocks: true, //   true = rocks launch you skyward, false = rocks just hurt
+
   // ---------- GHOST (race your best lap) ----------
   ghost: true, //         true = a glowing "ghost" of your best lap races you every lap
   ghostColor: '#FFE7B0', // the ghost's glow - a warm golden spirit by default
