@@ -221,6 +221,8 @@ class TrickDetector {
   /** Landed dirty and the jury is out: >0 counts down the recovery window. */
   private pendingSteps = 0
   private pendingAirSeconds = 0
+  /** up.y from the latest step - so cancel() can judge HOW the session ended. */
+  private lastUpY = 1
   /** Steps of the drift being held right now (0 = not drifting). */
   private driftSteps = 0
   /** Steps since the drift last gripped - a short gap is still the same drift. */
@@ -254,12 +256,16 @@ class TrickDetector {
    * path (reset / restart / NaN recovery) - the car did not really land, so a jump
    * that a reset interrupts must never post a phantom trick on the next grounded step.
    *
-   * EXCEPT: a reset that arrives while a dirty landing is still in its recovery
-   * window means the car came down wrong and NEEDED the reset - that is the
-   * definition of a wipeout, and it costs the whole session score.
+   * EXCEPT: a reset that arrives when the car is DOWN counts as the wipeout it
+   * is. Two ways to be down: (a) a dirty landing still inside its recovery
+   * window, and (b) sitting inverted with the wheels off the ground - a car on
+   * its roof never registers a touchdown at all (airborne = zero wheels grounded,
+   * and the rays point at the sky), so the session stays "active" until the reset
+   * arrives. Without (b), roof landings escape unpunished - the phantom that made
+   * wipeouts vanish entirely in playtest round 2.
    */
   cancel(): void {
-    if (this.pendingSteps > 0) wipeoutSession()
+    if (this.pendingSteps > 0 || (this.active && this.lastUpY < UPRIGHT_MIN)) wipeoutSession()
     this.active = false
     this.airSteps = 0
     this.yaw = 0
@@ -293,6 +299,7 @@ class TrickDetector {
       return
     }
 
+    this.lastUpY = up.y
     this.stepDrift(!airborne && telemetry.drifting)
 
     if (airborne) {
