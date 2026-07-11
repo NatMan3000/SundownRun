@@ -355,6 +355,8 @@ interface AirRunSpec {
   rEntry: number //   ascent-entrance radius (well inward, down on the valley floor)
   entryDeg: number // ascent-entrance angular offset from the bearing - splays the up-leg
   laneHalf: number // corridor half-width
+  padLift: number //  metres the pad is RAISED above the natural foothill - the big
+  //                  hill you turn around on top of. The whole descent inherits the drop.
   outLen: number //   flat run-out inward of the launch, under the takeoff
   rise: number //     kicker lip height
   run: number //      kicker rise half-width (gaussian sigma)
@@ -372,7 +374,7 @@ export const AIR_RUN_SPECS: readonly AirRunSpec[] = [
     bearing: Math.PI / 4, //         NE corner
     rPad: 782, padR: 15, rLaunch: 690,
     rEntry: 648, entryDeg: 17,
-    laneHalf: 6, outLen: 24,
+    laneHalf: 12, padLift: 26, outLen: 24,
     rise: 8.5, run: 15, dropAt: 28, drop: 4.5, dropRun: 14,
     landLen: 92, landHalf: 15,
   },
@@ -381,7 +383,7 @@ export const AIR_RUN_SPECS: readonly AirRunSpec[] = [
     bearing: (5 * Math.PI) / 4, //   SW corner
     rPad: 780, padR: 15, rLaunch: 688,
     rEntry: 646, entryDeg: -17,
-    laneHalf: 6, outLen: 24,
+    laneHalf: 12, padLift: 26, outLen: 24,
     rise: 8.5, run: 15, dropAt: 28, drop: 4.5, dropRun: 14,
     landLen: 100, landHalf: 15,
   },
@@ -426,7 +428,11 @@ export interface AirRun {
   reach2: number
 }
 
-const RUN_BLEND = 12 //  metres the flatten fades back into the hillside
+const RUN_BLEND = 18 //  metres the flatten fades back into the hillside. Together with
+//  laneHalf this must span several collider-lattice cells (2000m / 320 = 6.25m per
+//  cell): a lane much narrower than ~4 cells lets the rim face's gully noise bleed
+//  into the driving surface through the heightfield's bilinear interpolation - the
+//  "bumpy ramp" of playtest round 3.
 const RUNOUT_GRADE = 0.03
 
 let RUNS: AirRun[] | null = null
@@ -441,7 +447,7 @@ function ensureRuns(): AirRun[] {
     const tdz = Math.cos(s.bearing)
     const padx = rdx * s.rPad
     const padz = rdz * s.rPad
-    const padH = getBaseHeight(padx, padz)
+    const padH = getBaseHeight(padx, padz) + s.padLift
     const lx = rdx * s.rLaunch
     const lz = rdz * s.rLaunch
     const launchH = getBaseHeight(lx, lz)
