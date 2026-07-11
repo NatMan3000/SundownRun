@@ -23,6 +23,11 @@ rem point of this script. Josh's real knobs come back with the update anyway.
 git reset --hard origin/main
 if errorlevel 1 goto :resetFail
 
+rem ---- and sweep out any NEW files that are not part of the game ----
+rem reset --hard only restores files git knows about; this removes extras so the
+rem folder is a perfect fresh copy. Ignored stuff (node_modules) is left alone.
+git clean -fd
+
 rem ---- refresh dependencies in case the update added any ----
 set "RUNNER="
 where bun >nul 2>&1

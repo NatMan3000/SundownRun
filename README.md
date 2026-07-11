@@ -112,8 +112,14 @@ git clone https://github.com/NatMan3000/SundownRun.git SundownRun-Josh
 Inside your copy, `Sundown Run.bat` starts YOUR version (close the other game
 window first - they share the same door). And if your code goes properly bad
 and you want a do-over, run `Get Updates.bat` inside YOUR folder - it resets
-your copy back to a perfect fresh version of the official game. (It deletes
-your changes, so it is the big red do-over button, not a save button.)
+your copy back to a perfect fresh version of the official game, including
+removing any new files you added. (It deletes your changes, so it is the big
+red do-over button, not a save button.)
+
+Worst case - if the folder is SO broken even that doesn't work - just delete
+`SundownRun-Josh` entirely and run the `git clone` line above again. The
+official copy and the online version are never affected by anything you do
+in your folder.
 
 ## For developers
 
