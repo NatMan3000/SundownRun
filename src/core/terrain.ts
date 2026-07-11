@@ -159,12 +159,12 @@ export const PLAYGROUNDS: readonly Playground[] = [
   // Heading points INWARD (the direction you ride them). The big hill's far skirt leans
   // against the foothill base, so climbing the wall and turning around drops you onto it.
   {
-    x: 606, z: 137, heading: 3.363, kind: 'bigair', reach: 210,
-    what: 'east big-air hill - bomb down off the wall, through the dip, off the little mountain',
+    x: 606, z: 137, heading: 3.363, kind: 'bigair', reach: 180,
+    what: 'east big-air: bomb down off the wall, through the dip, off the kicker mountain',
   },
   {
-    x: -608, z: 66, heading: -0.107, kind: 'bigair', reach: 210,
-    what: 'west big-air hill - the same dare, sunset side',
+    x: -608, z: 66, heading: -0.107, kind: 'bigair', reach: 180,
+    what: 'west big-air: the same dare, sunset side',
   },
 
   // ---------- rim kickers: jumps out on the valley-edge benches, under the mountains ----------
@@ -210,14 +210,13 @@ function playgroundHeight(x: number, z: number): number {
       // land on a downslope. Narrow across-axis (16) keeps it clear of flanking roads.
       h += 8 * gaussUV(u, v, 15, 16) - 3.5 * gaussUV(u - 36, v, 24, 20)
     } else if (p.kind === 'bigair') {
-      // Nathan's spec, near-verbatim: a big hill near the bottom of the outside wall.
-      // Climb it, turn around, bomb down into a dip that hoses straight back up as a
-      // small mountain - the upslope is the ramp, speed is the trick. All broad
-      // gaussians, so the whole thing is glass-smooth at collider-lattice scale.
+      // Nathan's spec, round 2: the mountainside itself is the run-up - climb the wall,
+      // turn around, bomb straight down onto the flat. What waits at the bottom is a
+      // dip that hoses back up as a proper kicker mountain - the upslope is the ramp,
+      // speed is the trick. Broad gaussians: glass-smooth at collider-lattice scale.
       h +=
-        30 * gaussUV(u + 60, v, 45, 55) - //  the big turnaround hill
-        7 * gaussUV(u - 15, v, 20, 34) + //   the dip that loads the launch
-        16 * gaussUV(u - 75, v, 24, 36) //    the small mountain you fly off
+        22 * gaussUV(u - 82, v, 34, 40) - //  the kicker mountain you fly off
+        7 * gaussUV(u - 15, v, 20, 34) //     the dip that loads the launch
     } else {
       // flat top between two steep ramps
       h += 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
@@ -270,7 +269,7 @@ function playgroundHeightOne(p: Playground, dx: number, dz: number): number {
   if (p.kind === 'ramp') return 8 * gaussUV(u, v, 15, 16) - 3.5 * gaussUV(u - 36, v, 24, 20)
   if (p.kind === 'bigair') {
     return (
-      30 * gaussUV(u + 60, v, 45, 55) - 7 * gaussUV(u - 15, v, 20, 34) + 16 * gaussUV(u - 75, v, 24, 36)
+      22 * gaussUV(u - 82, v, 34, 40) - 7 * gaussUV(u - 15, v, 20, 34)
     )
   }
   return 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
