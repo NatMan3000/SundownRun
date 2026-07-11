@@ -9,6 +9,7 @@ import { Rocks } from './Rocks'
 import { StartLine } from './StartLine'
 import { RidgeArches } from './RidgeArches'
 import { RimRuns } from './RimRuns'
+import { CrashBales } from './CrashBales'
 import { Colliders } from './Colliders'
 import { windUniforms } from './wind'
 
@@ -26,7 +27,8 @@ import { windUniforms } from './wind'
 // up (core/terrain.ts, world/boundary.ts).
 //
 // Draw calls: sky 1, mountains 1, terrain 1, road 1, start line 2, ridge arches 1,
-// rim-run markers 1, grass 1, trees 3, rocks 1 = 13, plus shadow-caster passes.
+// rim-run markers 1, crash bales 1, grass 1, trees 3, rocks 1 = 14, plus
+// shadow-caster passes.
 // ============================================================
 
 export function World() {
@@ -44,6 +46,7 @@ export function World() {
       <StartLine />
       <RidgeArches />
       <RimRuns />
+      <CrashBales />
       <Grass />
       <Trees />
       <Rocks />
