@@ -313,7 +313,7 @@ export function getBaseHeight(x: number, z: number): number {
 // little way onto the straight, just past the exit of the last corner, so the car
 // spawns pointing down the straight rather than mid-apex.
 const CIRCUIT: ReadonlyArray<readonly [number, number]> = [
-  [-300, -406], //  0  start / finish. The long south straight, heading +x
+  [-296, -409], //  0  onto the long south straight, heading +x (the line itself moved east - see START_LINE_T)
   [-190, -412],
   [-60, -415],
   [70, -412], //     3  crest jump #1 sits here - flat out, both wheels leave
@@ -355,8 +355,8 @@ const CIRCUIT: ReadonlyArray<readonly [number, number]> = [
   [-460, -152],
   [-441, -240],
   [-410, -318],
-  [-368, -376], //  42  last corner
-  [-330, -404], //  43  its exit, already lined up with the straight
+  [-374, -368], //  42  last corner, eased wide
+  [-342, -394], //  43  its exit - blended so the sweeper flows onto the straight
 ]
 
 // ---------- build the rim table from the circuit ----------
