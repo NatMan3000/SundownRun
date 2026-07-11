@@ -229,8 +229,15 @@ function smash(
   t.collider = null
   t.state = 1
   t.t = 0
-  // A felled tree is worth a couple of points - mowing a grove adds up.
-  if (CONFIG.tricks) emitTrick('TIMBER', 2, 1)
+  // A felled tree is worth a couple of points - mowing a grove adds up. Clipping
+  // one with the FLANK is the stylish version: the tree sits square off the car's
+  // direction of motion (|cos| of the angle between travel and the tree offset is
+  // small), which you only manage by sliding past it, not driving at it.
+  if (CONFIG.tricks) {
+    const along = ((t.x - carX) * vx + (t.z - carZ) * vz) / ((Math.hypot(t.x - carX, t.z - carZ) || 1) * speed)
+    if (Math.abs(along) < 0.45) emitTrick('SIDE SWIPE', 5, 1)
+    else emitTrick('TIMBER', 2, 1)
+  }
   t.px = t.x
   t.py = t.y
   t.pz = t.z

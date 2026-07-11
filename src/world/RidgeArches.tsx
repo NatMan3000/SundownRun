@@ -31,13 +31,19 @@ export interface ArchDef {
   halfGap: number
 }
 
-// Stepping north-east up the ridge, roughly parallel to the run of tight ramp kickers
-// in core/terrain's PLAYGROUNDS. Each gap is ~8 m - wide enough to thread at speed, tight
+// One gate per corner of the playground, not a cluster: each sits ~40 m up the
+// approach line of a jump (matching its heading), so threading the gate aims you
+// straight at the launch. Each gap is ~8 m - wide enough to thread at speed, tight
 // enough to feel like a target.
 export const RIDGE_ARCHES: readonly ArchDef[] = [
+  // gate onto the ridge run - thread it and the two spine kickers are dead ahead
   { x: 150, z: 205, heading: 0.25, halfGap: 4.2 },
-  { x: 205, z: 218, heading: 0.25, halfGap: 4.2 },
-  { x: 258, z: 232, heading: 0.25, halfGap: 4.2 },
+  // guards the infield double (playground at -84,-54, heading 1.9) - 90 m up the
+  // approach, where the ground is flattest (probed: 0.64 m across the gap)
+  { x: -169, z: -25, heading: 1.9, halfGap: 4.2 },
+  // guards the dare-you double (playground at 214,-170, heading 0.55) - 55 m out,
+  // near-perfectly level footing (0.03 m across the gap)
+  { x: 185, z: -217, heading: 0.55, halfGap: 4.2 },
 ]
 
 /** Across-travel (left normal) unit vector for a heading, in the xz plane. */
