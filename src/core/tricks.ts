@@ -31,22 +31,49 @@ function loadBest(): number {
   }
 }
 
+/**
+ * A landing emits its whole chain in ONE physics step - AIR, then SPIN, then the
+ * combo bonus, microseconds apart. A poller that only keeps the latest event
+ * would show just the last of the burst, so the recent events live in a small
+ * ring: `nonce` counts every emit ever, and a consumer that has seen `seen`
+ * drains the (nonce - seen) newest, capped at the ring size.
+ */
+export const RECENT_SIZE = 8
+
 // Same discipline as core/telemetry.ts: a mutable singleton, no setters, no React.
 export const tricksState = {
-  /** Points earned this session (resets on page load, not on lap restart). */
+  /** Points earned this session. Resets on page load - and on a WIPEOUT. */
   sessionScore: 0,
   /** All-time best single-combo score, persisted. */
   bestCombo: loadBest(),
-  /** The most recent trick. Poll `nonce` to detect a fresh one. */
+  /** The most recent trick - convenience alias for recent[(nonce-1) % RECENT_SIZE]. */
   lastEvent: null as TrickEvent | null,
-  /** Bumped once per emitTrick call. */
+  /** Ring of the latest emits; slot k holds the event whose emit index was k mod RECENT_SIZE. */
+  recent: new Array<TrickEvent | null>(RECENT_SIZE).fill(null),
+  /** Total emits ever - bumped once per emitTrick call. */
   nonce: 0,
 }
 
 /** Detection side (vehicle physics) reports one landed/completed trick. */
 export function emitTrick(label: string, points: number, comboCount: number): void {
   tricksState.sessionScore += points
-  tricksState.lastEvent = { label, points, comboCount }
+  const ev: TrickEvent = { label, points, comboCount }
+  tricksState.lastEvent = ev
+  tricksState.recent[tricksState.nonce % RECENT_SIZE] = ev
+  tricksState.nonce++
+}
+
+/**
+ * A crash landing wipes the WHOLE session score, not just the chain in the air -
+ * that risk is what makes holding a big score feel like something. Emits a
+ * WIPEOUT event carrying the (negative) points lost so the UI can rub it in.
+ */
+export function wipeoutSession(): void {
+  const lost = Math.round(tricksState.sessionScore)
+  tricksState.sessionScore = 0
+  const ev: TrickEvent = { label: 'WIPEOUT', points: -lost, comboCount: 1 }
+  tricksState.lastEvent = ev
+  tricksState.recent[tricksState.nonce % RECENT_SIZE] = ev
   tricksState.nonce++
 }
 

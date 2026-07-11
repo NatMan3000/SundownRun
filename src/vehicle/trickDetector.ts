@@ -31,7 +31,7 @@
 
 import * as THREE from 'three'
 import { CONFIG } from '../core/config'
-import { commitCombo, emitTrick } from '../core/tricks'
+import { commitCombo, emitTrick, wipeoutSession } from '../core/tricks'
 import { DT } from './tuning'
 
 const TWO_PI = Math.PI * 2
@@ -44,18 +44,24 @@ const MIN_AIR_S = 0.4
 /** up.y at the landing step. At/above this the car came down on its wheels. */
 const UPRIGHT_MIN = 0.5
 
-/** Air tiers by hang time, highest first. Only the top tier reached is emitted. */
-const AIR_TIERS: ReadonlyArray<readonly [number, number, string]> = [
-  [2.4, 450, 'TO THE MOON'],
-  [1.7, 260, 'HUGE AIR'],
-  [1.1, 120, 'BIG AIR'],
-  [0.6, 40, 'AIR'],
+/** Air tier LABELS by hang time, highest first - the shout, not the score. */
+const AIR_TIERS: ReadonlyArray<readonly [number, string]> = [
+  [2.4, 'TO THE MOON'],
+  [1.7, 'HUGE AIR'],
+  [1.1, 'BIG AIR'],
+  [0.6, 'AIR'],
 ]
+/**
+ * Air POINTS are continuous in hang time - every jump scores differently, and
+ * quadratic growth means doubling your air more than doubles your points:
+ * 0.6s = 20, 1.0s = 55, 1.5s = 124, 2.4s = 317.
+ */
+const AIR_PTS_PER_S2 = 55
 
 const SPIN_HALF_PTS = 100 //  per 180 degrees of spin
 const FLIP_PTS = 250 //       per full front/back flip
 const ROLL_PTS = 250 //       per full barrel roll
-const CLEAN_BONUS = 50 //     flat reward for landing it at all
+const CLEAN_BONUS = 25 //     small flat reward for landing it - the air itself is the score
 /** Extra fraction of the chain total per trick beyond the first - chains pay off. */
 const COMBO_RATE = 0.25
 
@@ -107,11 +113,12 @@ export function classifyLanding(
   let airPoints = 0
   for (let i = 0; i < AIR_TIERS.length; i++) {
     if (airSeconds >= AIR_TIERS[i][0]) {
-      airPoints = AIR_TIERS[i][1]
-      airLabel = AIR_TIERS[i][2]
+      airLabel = AIR_TIERS[i][1]
       break
     }
   }
+  // Points flow from the hang time itself, so no two jumps score alike.
+  if (airLabel !== '') airPoints = Math.round(airSeconds * airSeconds * AIR_PTS_PER_S2)
 
   const spinHalves = Math.floor(Math.abs(yaw) / Math.PI)
   const spinPoints = spinHalves * SPIN_HALF_PTS
@@ -152,9 +159,9 @@ function scoreLanding(airSeconds: number, yaw: number, pitch: number, roll: numb
   if (r.links === 0) return // a nothing-hop: no trick, and so no combo to void either
 
   if (!clean) {
-    // Landed on the roof / mid-flip / on its side. The chain is lost - zero points,
-    // no commit - but the player still gets told, so a bail reads as a bail.
-    emitTrick('WIPEOUT', 0, 1)
+    // Landed on the roof / mid-flip / on its side. Not just the chain - the WHOLE
+    // session score is gone. Holding a big number while lining up a jump is the game.
+    wipeoutSession()
     return
   }
 

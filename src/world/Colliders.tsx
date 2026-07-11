@@ -14,6 +14,7 @@ import { TERRAIN_RES, getRapierHeights } from './heightfield'
 import { getScatter } from './scatter'
 import { START_LINE_POSTS } from './StartLine'
 import { RIDGE_ARCH_POSTS } from './RidgeArches'
+import { resetArchGates, stepArchGates } from './archGates'
 import { getTreeBodies, resetTreeSmash, stepTreeSmash } from './treeSmash'
 
 // ============================================================
@@ -39,6 +40,7 @@ function ObstacleColliders() {
   useEffect(() => {
     const trees = getTreeBodies()
     resetTreeSmash()
+    resetArchGates()
 
     const body = world.createRigidBody(rapier.RigidBodyDesc.fixed())
 
@@ -83,7 +85,10 @@ function ObstacleColliders() {
 
   // Runs immediately before every world.step(), which is the whole trick: a trunk the
   // car is about to reach at speed is disabled BEFORE any contact is solved.
-  useBeforePhysicsStep((w) => stepTreeSmash(w))
+  useBeforePhysicsStep((w) => {
+    stepTreeSmash(w)
+    stepArchGates(w)
+  })
 
   return null
 }

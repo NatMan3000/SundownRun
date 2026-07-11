@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { CONFIG } from '../core/config'
-import { tricksState } from '../core/tricks'
+import { RECENT_SIZE, tricksState } from '../core/tricks'
 import * as audio from '../audio/AudioEngine'
 
 /** A trick worth a celebratory audio flourish. Small bumps land silent-but-scored. */
@@ -63,11 +63,16 @@ function TrickHudInner() {
     const tick = () => {
       raf = requestAnimationFrame(tick)
 
-      // ----- fresh trick? nonce bumps once per emitTrick -----
+      // ----- fresh tricks? a landing emits its whole chain in ONE physics step,
+      // so drain every emit since the last frame from the ring, not just the latest.
       if (tricksState.nonce !== seenNonce) {
+        const fresh = Math.min(tricksState.nonce - seenNonce, RECENT_SIZE)
+        const from = tricksState.nonce - fresh
         seenNonce = tricksState.nonce
-        const ev = tricksState.lastEvent
-        if (ev) {
+        let loudest = 0
+        for (let k = from; k < from + fresh; k++) {
+          const ev = tricksState.recent[k % RECENT_SIZE]
+          if (!ev) continue
           const id = ++popId.current
           setPops((prev) => {
             const next = prev.length >= MAX_POPS ? prev.slice(1) : prev.slice()
@@ -79,8 +84,9 @@ function TrickHudInner() {
             setPops((prev) => prev.filter((p) => p.id !== id))
           }, POP_MS)
           timers.current.push(timer)
-          if (ev.points >= BIG_TRICK_POINTS) audio.playTrick(ev.points)
+          if (ev.points > loudest) loudest = ev.points
         }
+        if (loudest >= BIG_TRICK_POINTS) audio.playTrick(loudest)
       }
 
       // ----- scoreboard: write only on change, same discipline as the speedo -----
@@ -120,6 +126,7 @@ function TrickHudInner() {
             >
               <span className="trick-pop__label">{p.label}</span>
               {!fail && <span className="trick-pop__pts">+{Math.round(p.points)}</span>}
+              {p.points < 0 && <span className="trick-pop__pts">{Math.round(p.points)}</span>}
               {p.combo > 1 && <span className="trick-pop__combo">&times;{p.combo}</span>}
             </div>
           )
