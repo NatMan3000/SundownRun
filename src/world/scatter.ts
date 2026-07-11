@@ -74,7 +74,7 @@ export interface Scatter {
 const TARGET_A = 780
 const TARGET_B = 620
 const TARGET_C = 230
-const TARGET_ROCKS = 640
+const TARGET_ROCKS = 420 // was 640 - thinned on Nathan's playtest call, they crowded the open world
 /** Loose stone climbing the rim's lower slopes. Decoration only, no colliders out there. */
 const TARGET_SCREE = 620
 const GRASS_COUNT = 32000

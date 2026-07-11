@@ -241,9 +241,10 @@ export const ASSIST = {
   /** Drift angle (rad) below which "counter-steer" is meaningless - there is no slide yet. */
   counterSteerBeta: 0.12,
 
-  /** Air control - deliberately weak. You steer the landing, you don't fly. */
-  airPitch: 900,
-  airYaw: 700,
+  /** Air control - enough authority to style a jump (tricks are the game now),
+   *  still short of flying. Turned up from 900/700 on Nathan's playtest call. */
+  airPitch: 1500,
+  airYaw: 1200,
   airAngularDamp: 0.9,
   /** Extra lateral damping below walking pace so the car doesn't creep sideways. */
   lowSpeedLateral: 0.6,

@@ -31,6 +31,7 @@
 
 import * as THREE from 'three'
 import { CONFIG } from '../core/config'
+import { telemetry } from '../core/telemetry'
 import { commitCombo, emitTrick, wipeoutSession } from '../core/tricks'
 import { DT } from './tuning'
 
@@ -61,7 +62,6 @@ const AIR_PTS_PER_S2 = 55
 const SPIN_HALF_PTS = 100 //  per 180 degrees of spin
 const FLIP_PTS = 250 //       per full front/back flip
 const ROLL_PTS = 250 //       per full barrel roll
-const CLEAN_BONUS = 25 //     small flat reward for landing it - the air itself is the score
 /** Extra fraction of the chain total per trick beyond the first - chains pay off. */
 const COMBO_RATE = 0.25
 
@@ -153,17 +153,12 @@ export function classifyLanding(
   }
 }
 
-/** Emit a finished session's tricks through the contract. Clean lands, crash voids. */
-function scoreLanding(airSeconds: number, yaw: number, pitch: number, roll: number, clean: boolean): void {
+/** Emit a finished session's tricks through the contract. Only ever called for a
+ *  landing that ended upright - a crash resolves to wipeoutSession() in the
+ *  detector's recovery window instead, and never reaches here. */
+function scoreLanding(airSeconds: number, yaw: number, pitch: number, roll: number): void {
   const r = classifyLanding(airSeconds, yaw, pitch, roll)
   if (r.links === 0) return // a nothing-hop: no trick, and so no combo to void either
-
-  if (!clean) {
-    // Landed on the roof / mid-flip / on its side. Not just the chain - the WHOLE
-    // session score is gone. Holding a big number while lining up a jump is the game.
-    wipeoutSession()
-    return
-  }
 
   let combo = 0
   let total = 0
@@ -184,17 +179,37 @@ function scoreLanding(airSeconds: number, yaw: number, pitch: number, roll: numb
     total += r.rollPoints
   }
 
-  // The chain bonus is where stringing tricks together stops being additive and
-  // starts being exciting: a three-trick clean landing is worth half again its parts.
-  const comboBonus = r.links >= 2 ? Math.round(total * COMBO_RATE * (r.links - 1)) : 0
-  const bonus = CLEAN_BONUS + comboBonus
-  emitTrick(r.links >= 2 ? `COMBO x${r.links}!` : 'CLEAN', bonus, ++combo)
-  total += bonus
+  // No participation prize for merely landing - the tricks themselves are the
+  // score. The bonus only exists where chains do: a three-trick landing is worth
+  // half again its parts.
+  if (r.links >= 2) {
+    const comboBonus = Math.round(total * COMBO_RATE * (r.links - 1))
+    emitTrick(`COMBO x${r.links}!`, comboBonus, ++combo)
+    total += comboBonus
+  }
 
   commitCombo(total)
 }
 
 // ---------- the detector (singleton - there is one car) ----------
+
+/** Grounded steps a scruffy landing gets to recover upright before it is a wipeout.
+ *  Two wheels + a wobble is a save, not a crash - only SETTLING wrong ends the run. */
+const RECOVER_STEPS = 45 // 0.75s at 60Hz
+
+// ---------- drifting: the longer you hold it, the more it pays ----------
+/** Shorter than this is cornering, not a drift worth shouting about. */
+const DRIFT_MIN_S = 1.0
+/** A drift may flicker (grip catches for a step or two) - gaps shorter than this
+ *  stay part of the same drift instead of splitting it into two small ones. */
+const DRIFT_GAP_STEPS = 24 // 0.4s
+/** Points grow with the square of held time: 1s = 15, 2s = 60, 3s = 135, 5s = 375. */
+const DRIFT_PTS_PER_S2 = 15
+const DRIFT_TIERS: ReadonlyArray<readonly [number, string]> = [
+  [4.5, 'MEGA DRIFT'],
+  [2.5, 'LONG DRIFT'],
+  [1.0, 'DRIFT'],
+]
 
 class TrickDetector {
   private active = false
@@ -202,18 +217,57 @@ class TrickDetector {
   private yaw = 0 //   accumulated body-frame rotation, radians
   private pitch = 0
   private roll = 0
+  /** Landed dirty and the jury is out: >0 counts down the recovery window. */
+  private pendingSteps = 0
+  private pendingAirSeconds = 0
+  /** Steps of the drift being held right now (0 = not drifting). */
+  private driftSteps = 0
+  /** Steps since the drift last gripped - a short gap is still the same drift. */
+  private driftGap = 0
+
+  /** Fed each step from telemetry.drifting. Airborne steps count as gap, so a
+   *  drift into a jump banks when the gap runs out, never merging across the air. */
+  private stepDrift(drifting: boolean): void {
+    if (drifting) {
+      this.driftSteps++
+      this.driftGap = 0
+      return
+    }
+    if (this.driftSteps === 0) return
+    this.driftGap++
+    if (this.driftGap < DRIFT_GAP_STEPS) return
+    const heldS = this.driftSteps * DT
+    this.driftSteps = 0
+    this.driftGap = 0
+    if (heldS < DRIFT_MIN_S) return
+    for (let i = 0; i < DRIFT_TIERS.length; i++) {
+      if (heldS >= DRIFT_TIERS[i][0]) {
+        emitTrick(DRIFT_TIERS[i][1], Math.round(heldS * heldS * DRIFT_PTS_PER_S2), 1)
+        return
+      }
+    }
+  }
 
   /**
    * Abandon the session in progress without scoring it. Called from every teleport
    * path (reset / restart / NaN recovery) - the car did not really land, so a jump
    * that a reset interrupts must never post a phantom trick on the next grounded step.
+   *
+   * EXCEPT: a reset that arrives while a dirty landing is still in its recovery
+   * window means the car came down wrong and NEEDED the reset - that is the
+   * definition of a wipeout, and it costs the whole session score.
    */
   cancel(): void {
+    if (this.pendingSteps > 0) wipeoutSession()
     this.active = false
     this.airSteps = 0
     this.yaw = 0
     this.pitch = 0
     this.roll = 0
+    this.pendingSteps = 0
+    this.pendingAirSeconds = 0
+    this.driftSteps = 0 // a teleport mid-drift banks nothing
+    this.driftGap = 0
     trickState.airborne = false
     trickState.airSeconds = 0
     trickState.spinDeg = 0
@@ -238,13 +292,21 @@ class TrickDetector {
       return
     }
 
+    this.stepDrift(!airborne && telemetry.drifting)
+
     if (airborne) {
       if (!this.active) {
         this.active = true
-        this.airSteps = 0
-        this.yaw = 0
-        this.pitch = 0
-        this.roll = 0
+        // A bounce off a dirty landing continues the SAME session - accumulators
+        // survive, so a tumble that recovers mid-air still scores as one trick.
+        if (this.pendingSteps === 0) {
+          this.airSteps = 0
+          this.yaw = 0
+          this.pitch = 0
+          this.roll = 0
+        }
+        this.pendingSteps = 0
+        this.pendingAirSeconds = 0
       }
       this.airSteps++
       // Body-frame rates: yaw about the car's up (spin), pitch about its right
@@ -260,16 +322,63 @@ class TrickDetector {
       return
     }
 
-    // Just touched down - close the session and score it.
+    // Just touched down. Upright: close the session and score it. Dirty: hold the
+    // verdict open for a recovery window - two wheels and a wobble is a save.
     if (this.active) {
       const airSeconds = this.airSteps * DT
-      const clean = up.y >= UPRIGHT_MIN
-      const yaw = this.yaw
-      const pitch = this.pitch
-      const roll = this.roll
-      this.cancel()
-      if (airSeconds >= MIN_AIR_S) scoreLanding(airSeconds, yaw, pitch, roll, clean)
+      if (airSeconds < MIN_AIR_S) {
+        this.settle()
+        return
+      }
+      if (up.y >= UPRIGHT_MIN) {
+        const yaw = this.yaw
+        const pitch = this.pitch
+        const roll = this.roll
+        this.settle()
+        scoreLanding(airSeconds, yaw, pitch, roll)
+        return
+      }
+      this.active = false
+      this.pendingSteps = RECOVER_STEPS
+      this.pendingAirSeconds = airSeconds
+      trickState.airborne = false
+      return
     }
+
+    // Grounded with a verdict pending: recover upright in time and the trick scores
+    // clean; settle wrong (or need a reset - see cancel) and the session wipes out.
+    if (this.pendingSteps > 0) {
+      if (up.y >= UPRIGHT_MIN) {
+        const airSeconds = this.pendingAirSeconds
+        const yaw = this.yaw
+        const pitch = this.pitch
+        const roll = this.roll
+        this.settle()
+        scoreLanding(airSeconds, yaw, pitch, roll)
+        return
+      }
+      this.pendingSteps--
+      if (this.pendingSteps === 0) {
+        this.settle()
+        wipeoutSession()
+      }
+    }
+  }
+
+  /** Quietly zero everything - the no-verdict version of cancel(). */
+  private settle(): void {
+    this.active = false
+    this.airSteps = 0
+    this.yaw = 0
+    this.pitch = 0
+    this.roll = 0
+    this.pendingSteps = 0
+    this.pendingAirSeconds = 0
+    trickState.airborne = false
+    trickState.airSeconds = 0
+    trickState.spinDeg = 0
+    trickState.flipDeg = 0
+    trickState.rollDeg = 0
   }
 }
 

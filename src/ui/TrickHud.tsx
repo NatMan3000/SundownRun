@@ -47,17 +47,20 @@ function TrickHudInner() {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const scoreRef = useRef<HTMLDivElement>(null)
+  const highRef = useRef<HTMLDivElement>(null)
   const bestRef = useRef<HTMLDivElement>(null)
 
   // ---------- the one rAF loop ----------
   useEffect(() => {
     const scoreEl = scoreRef.current
+    const highEl = highRef.current
     const bestEl = bestRef.current
-    if (!scoreEl || !bestEl) return
+    if (!scoreEl || !highEl || !bestEl) return
 
     let raf = 0
     let seenNonce = tricksState.nonce
     let lastScore = -1
+    let lastHigh = -1
     let lastBest = -1
 
     const tick = () => {
@@ -94,6 +97,11 @@ function TrickHudInner() {
       if (sc !== lastScore) {
         lastScore = sc
         scoreEl.textContent = String(sc)
+      }
+      const hs = Math.round(tricksState.highScore)
+      if (hs !== lastHigh) {
+        lastHigh = hs
+        highEl.textContent = String(hs)
       }
       const bc = Math.round(tricksState.bestCombo)
       if (bc !== lastBest) {
@@ -138,6 +146,12 @@ function TrickHudInner() {
         <div className="trick-board__row">
           <span className="trick-board__label">SCORE</span>
           <div className="trick-board__val" ref={scoreRef}>
+            0
+          </div>
+        </div>
+        <div className="trick-board__row trick-board__row--best">
+          <span className="trick-board__label">HIGH SCORE</span>
+          <div className="trick-board__val trick-board__val--best" ref={highRef}>
             0
           </div>
         </div>

@@ -21,13 +21,22 @@ export interface TrickEvent {
 }
 
 const BEST_KEY = 'sundown-run.bestTrickScore'
+const HIGH_KEY = 'sundown-run.highScore'
 
-function loadBest(): number {
+function loadScore(key: string): number {
   try {
-    const v = parseFloat(localStorage.getItem(BEST_KEY) ?? '')
+    const v = parseFloat(localStorage.getItem(key) ?? '')
     return Number.isFinite(v) && v > 0 ? v : 0
   } catch {
     return 0
+  }
+}
+
+function saveScore(key: string, v: number): void {
+  try {
+    localStorage.setItem(key, String(Math.round(v)))
+  } catch {
+    // storage unavailable - the number just won't survive a reload
   }
 }
 
@@ -44,8 +53,11 @@ export const RECENT_SIZE = 8
 export const tricksState = {
   /** Points earned this session. Resets on page load - and on a WIPEOUT. */
   sessionScore: 0,
+  /** All-time high-water mark of sessionScore, persisted. Banked as it grows, so a
+   *  wipeout can zero the session without ever touching the high score. */
+  highScore: loadScore(HIGH_KEY),
   /** All-time best single-combo score, persisted. */
-  bestCombo: loadBest(),
+  bestCombo: loadScore(BEST_KEY),
   /** The most recent trick - convenience alias for recent[(nonce-1) % RECENT_SIZE]. */
   lastEvent: null as TrickEvent | null,
   /** Ring of the latest emits; slot k holds the event whose emit index was k mod RECENT_SIZE. */
@@ -57,6 +69,11 @@ export const tricksState = {
 /** Detection side (vehicle physics) reports one landed/completed trick. */
 export function emitTrick(label: string, points: number, comboCount: number): void {
   tricksState.sessionScore += points
+  // Bank the high score as it grows - a later wipeout zeroes the session, never this.
+  if (tricksState.sessionScore > tricksState.highScore) {
+    tricksState.highScore = tricksState.sessionScore
+    saveScore(HIGH_KEY, tricksState.highScore)
+  }
   const ev: TrickEvent = { label, points, comboCount }
   tricksState.lastEvent = ev
   tricksState.recent[tricksState.nonce % RECENT_SIZE] = ev
