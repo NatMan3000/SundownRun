@@ -13,9 +13,7 @@ import { BOUNDARY, CATCH_FLOOR, boundarySegments } from './boundary'
 import { TERRAIN_RES, getRapierHeights } from './heightfield'
 import { getScatter } from './scatter'
 import { START_LINE_POSTS } from './StartLine'
-import { RIDGE_ARCH_POSTS } from './RidgeArches'
 import { RIM_RUN_GATE_POSTS } from './RimRuns'
-import { resetArchGates, stepArchGates } from './archGates'
 import { resetRimRunGates, stepRimRunGates } from './rimRunGates'
 import { getTreeBodies, resetTreeSmash, stepTreeSmash } from './treeSmash'
 
@@ -42,7 +40,6 @@ function ObstacleColliders() {
   useEffect(() => {
     const trees = getTreeBodies()
     resetTreeSmash()
-    resetArchGates()
     resetRimRunGates()
 
     const body = world.createRigidBody(rapier.RigidBodyDesc.fixed())
@@ -90,7 +87,6 @@ function ObstacleColliders() {
   // car is about to reach at speed is disabled BEFORE any contact is solved.
   useBeforePhysicsStep((w) => {
     stepTreeSmash(w)
-    stepArchGates(w)
     stepRimRunGates(w)
   })
 
@@ -135,19 +131,6 @@ export function Colliders() {
         {START_LINE_POSTS.map((p, i) => (
           <CuboidCollider
             key={`p${i}`}
-            args={[p.halfX, p.halfY, p.halfZ]}
-            position={[p.x, p.y, p.z]}
-            rotation={[0, p.rotY, 0]}
-            friction={0.6}
-            restitution={0.2}
-          />
-        ))}
-
-        {/* Ridge gate posts. The gap between each pair is the drivable line; the posts
-            are solid so a clipped shoulder actually clips. */}
-        {RIDGE_ARCH_POSTS.map((p, i) => (
-          <CuboidCollider
-            key={`a${i}`}
             args={[p.halfX, p.halfY, p.halfZ]}
             position={[p.x, p.y, p.z]}
             rotation={[0, p.rotY, 0]}

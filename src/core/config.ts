@@ -14,7 +14,7 @@ export const CONFIG = {
   // ---------- HANDLING ----------
   grip: 1.0, //          0.7 = slippery drift machine, 1.3 = glued to the road
   steering: 1.0, //      0.7 = calm and easy, 1.3 = twitchy go-kart
-  enginePower: 1.0, //   1.5 = rocket mode, 0.6 = grandma mode
+  enginePower: 1.5, //   1.5 = rocket mode, 0.6 = grandma mode
   topSpeedKmh: 190, //   how fast it can possibly go
   brakeStrength: 1.0, // bigger = stops harder
 
