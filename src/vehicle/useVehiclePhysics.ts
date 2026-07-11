@@ -32,7 +32,7 @@ import { CONFIG } from '../core/config'
 import { telemetry } from '../core/telemetry'
 import { useGameStore } from '../core/store'
 import { initInput, input, restartSignal, steeringGain, updateInput } from '../core/input'
-import { ROAD_WIDTH, getSpawn, getTerrainHeight, nearestRoadPoint } from '../core/terrain'
+import { getSpawn, getTerrainHeight, nearestRoadPoint, roadHalfWidthAt } from '../core/terrain'
 
 import { carVisual } from './carVisual'
 import type { CarBodyHandle } from './carVisual'
@@ -705,7 +705,9 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     if (s.stepCount % STATE.roadQueryEverySteps === 0) {
       const rp = nearestRoadPoint(_pos.x, _pos.z)
       const d = Math.hypot(_pos.x - rp.point.x, _pos.z - rp.point.z)
-      telemetry.onRoad = d <= ROAD_WIDTH / 2 + 0.6
+      // Test against the ribbon a player SEES (asphalt + shoulder + hairpin flare),
+      // not bare ROAD_WIDTH - the visible edge is metres wider than the asphalt.
+      telemetry.onRoad = d <= roadHalfWidthAt(rp.t) + 0.6
       // Same query feeds lap validity: sector checkpoints off `rp.t`, dirty
       // accounting off `onRoad`. Costs nothing beyond what onRoad already paid.
       lap.update(rp.t, speedKmh, performance.now(), telemetry.onRoad)

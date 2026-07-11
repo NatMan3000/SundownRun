@@ -551,6 +551,21 @@ const built = buildRoad()
 export const roadSpline: THREE.CatmullRomCurve3 = built.spline
 export const ROAD_LENGTH: number = roadSpline.getLength()
 
+/**
+ * Half-width of the DRAWN road ribbon at spline t - asphalt + shoulder + the
+ * hairpin flare. This is what "on the road" means to a player's eyes, so lap
+ * dirtiness must test against it, never against bare ROAD_WIDTH / 2 (the outer
+ * 3+ m of visible ribbon would count as off-road - the bug behind phantom
+ * dirty laps on clean wide lines).
+ */
+export function roadHalfWidthAt(t: number): number {
+  const f = (((t % 1) + 1) % 1) * PROFILE_N
+  const f0 = Math.floor(f) % PROFILE_N
+  const f1 = (f0 + 1) % PROFILE_N
+  const ft = f - Math.floor(f)
+  return RIBBON_HALF + built.flareProfile[f0] * (1 - ft) + built.flareProfile[f1] * ft
+}
+
 // ---------- dense sample table + spatial grid ----------
 
 const RX = new Float32Array(DENSE)

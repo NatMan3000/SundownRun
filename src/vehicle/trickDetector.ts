@@ -206,6 +206,7 @@ const DRIFT_GAP_STEPS = 24 // 0.4s
 /** Points grow with the square of held time: 1s = 15, 2s = 60, 3s = 135, 5s = 375. */
 const DRIFT_PTS_PER_S2 = 15
 const DRIFT_TIERS: ReadonlyArray<readonly [number, string]> = [
+  [7.0, 'ULTIMATE DRIFT'],
   [4.5, 'MEGA DRIFT'],
   [2.5, 'LONG DRIFT'],
   [1.0, 'DRIFT'],
