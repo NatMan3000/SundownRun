@@ -215,8 +215,8 @@ function playgroundHeight(x: number, z: number): number {
       // dip that hoses back up as a proper kicker mountain - the upslope is the ramp,
       // speed is the trick. Broad gaussians: glass-smooth at collider-lattice scale.
       h +=
-        22 * gaussUV(u - 82, v, 34, 40) - //  the kicker mountain you fly off
-        7 * gaussUV(u - 15, v, 20, 34) //     the dip that loads the launch
+        13 * gaussUV(u - 70, v, 22, 34) - //  the kicker mountain you fly off
+        5 * gaussUV(u - 15, v, 20, 34) //     the dip that loads the launch
     } else {
       // flat top between two steep ramps
       h += 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
@@ -269,7 +269,7 @@ function playgroundHeightOne(p: Playground, dx: number, dz: number): number {
   if (p.kind === 'ramp') return 8 * gaussUV(u, v, 15, 16) - 3.5 * gaussUV(u - 36, v, 24, 20)
   if (p.kind === 'bigair') {
     return (
-      22 * gaussUV(u - 82, v, 34, 40) - 7 * gaussUV(u - 15, v, 20, 34)
+      13 * gaussUV(u - 70, v, 22, 34) - 5 * gaussUV(u - 15, v, 20, 34)
     )
   }
   return 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
