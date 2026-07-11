@@ -79,6 +79,13 @@ interface GameStore {
   // reset-to-road signal: vehicle watches the nonce and teleports on change
   resetNonce: number
   requestReset: () => void
+
+  // ghost lap: bumped whenever a new best-lap trace is committed, so the ghost
+  // car re-reads the (possibly new-bodied) trace. The trace itself is NOT here -
+  // it is per-frame replay data and lives in vehicle/ghost.ts, same discipline
+  // as telemetry / carVisual. This is only the low-frequency "it changed" signal.
+  ghostVersion: number
+  bumpGhost: () => void
 }
 
 export const useGameStore = create<GameStore>((set) => ({
@@ -140,4 +147,7 @@ export const useGameStore = create<GameStore>((set) => ({
 
   resetNonce: 0,
   requestReset: () => set((s) => ({ resetNonce: s.resetNonce + 1 })),
+
+  ghostVersion: 0,
+  bumpGhost: () => set((s) => ({ ghostVersion: s.ghostVersion + 1 })),
 }))

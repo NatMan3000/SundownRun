@@ -366,7 +366,7 @@ function buildUnderShadowTexture(): THREE.CanvasTexture {
 
 // ---------- lazy, cached, shared ----------
 
-interface BodyGeometry {
+export interface BodyGeometry {
   paint: THREE.BufferGeometry
   cabin: THREE.BufferGeometry
   glass: THREE.BufferGeometry
@@ -396,9 +396,11 @@ function buildBody(id: CarBodyId): BodyGeometry {
   }
 }
 
-/** Built on first selection, kept for the session: cycling the garage is instant. */
+/** Built on first selection, kept for the session: cycling the garage is instant.
+ *  Exported so the ghost car (GhostCar.tsx) replays the recorded body with the
+ *  exact same cached geometry instead of authoring a second model. */
 const bodyCache = new Map<CarBodyId, BodyGeometry>()
-function getBody(id: CarBodyId): BodyGeometry {
+export function getBody(id: CarBodyId): BodyGeometry {
   let g = bodyCache.get(id)
   if (!g) {
     g = buildBody(id)
@@ -407,7 +409,7 @@ function getBody(id: CarBodyId): BodyGeometry {
   return g
 }
 
-const WHEEL_GEOM = {
+export const WHEEL_GEOM = {
   tyre: buildTyre(),
   rim: buildRim(),
   rimLip: buildRimLip(),

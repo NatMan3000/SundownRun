@@ -32,6 +32,11 @@ export const CONFIG = {
   driftSmoke: true, //    tyre smoke when you drift
   treeSmashKmh: 40, //    hit a tree faster than this and it smashes away (slower = solid crunch)
   showFps: false, //      true = show the frames-per-second counter
+
+  // ---------- GHOST (race your best lap) ----------
+  ghost: true, //         true = a glowing "ghost" of your best lap races you every lap
+  ghostColor: '#FFE7B0', // the ghost's glow - a warm golden spirit by default
+  ghostOpacity: 0.34, //  0.15 = barely there, 0.6 = bold. How see-through the ghost is.
 } as const
 
 export type GameConfig = typeof CONFIG

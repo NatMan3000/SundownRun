@@ -18,6 +18,7 @@ import { useGameStore } from '../core/store'
 import { carVisual } from '../vehicle/carVisual'
 import { cameraState } from '../vehicle/cameraMode'
 import { lapState } from '../vehicle/lapTracker'
+import { ghostState } from '../vehicle/ghost'
 import { DemoDrive } from './DemoDrive'
 
 declare global {
@@ -59,6 +60,15 @@ declare global {
       readonly cameraTransition: number
       /** Live world position of the camera - lets a checker prove it never snaps. */
       readonly cameraPos: [number, number, number]
+      /** Ghost lap: a best-lap trace is loaded and available to race. */
+      readonly ghostHasTrace: boolean
+      /** Ghost lap: the ghost car is on screen and replaying right now. */
+      readonly ghostPlaying: boolean
+      /** Ghost lap: samples in the loaded trace (20Hz), and the trace's lap time. */
+      readonly ghostSamples: number
+      readonly ghostLapMs: number | null
+      /** Ghost lap: live world position of the ghost car - proves it moves + syncs. */
+      readonly ghostPos: [number, number, number]
       /** Runtime steering knob, 0.6..1.6 (persisted). Settable for verification. */
       steering: number
       setSteering: (v: number) => void
@@ -192,6 +202,21 @@ export function DevTools() {
       },
       get cameraPos(): [number, number, number] {
         return [camera.position.x, camera.position.y, camera.position.z]
+      },
+      get ghostHasTrace() {
+        return ghostState.hasTrace
+      },
+      get ghostPlaying() {
+        return ghostState.playing
+      },
+      get ghostSamples() {
+        return ghostState.sampleCount
+      },
+      get ghostLapMs() {
+        return ghostState.lapMs
+      },
+      get ghostPos(): [number, number, number] {
+        return [ghostState.position.x, ghostState.position.y, ghostState.position.z]
       },
       get steering() {
         return useGameStore.getState().steering

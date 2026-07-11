@@ -28,6 +28,7 @@
 // ============================================================
 
 import { useGameStore } from '../core/store'
+import { ghostRecorder } from './ghost'
 import { LAP } from './tuning'
 
 const SECTORS = LAP.sectors
@@ -92,6 +93,9 @@ export class LapTracker {
       if (!this.dirty && this.offRoadMs > LAP.dirtyGraceMs) {
         this.dirty = true
         useGameStore.getState().setCurrentLapDirty(true)
+        // A dirty lap can never set a best, so its ghost recording is dead weight -
+        // stop it now rather than carry it to a commit that will never come.
+        ghostRecorder.discard()
       }
       lapState.lapElapsedMs = nowMs - this.lapStartMs
     }
@@ -140,10 +144,21 @@ export class LapTracker {
     for (let k = 0; k < SECTORS; k++) if (this.passed[k]) count++
 
     if (count === SECTORS) {
+      // Decide "new best" against the SAME rule store.completeLap uses, BEFORE the
+      // store applies it - a clean lap that strictly beats the standing best.
+      // Only then is this lap's recording worth keeping as the ghost.
+      const prevBest = useGameStore.getState().bestLapMs
+      const isNewBest = !this.dirty && (prevBest === null || elapsed < prevBest)
       useGameStore.getState().completeLap(elapsed, this.dirty)
+      if (isNewBest) {
+        if (ghostRecorder.commit(elapsed)) useGameStore.getState().bumpGhost()
+      } else {
+        ghostRecorder.discard()
+      }
       if (import.meta.env.DEV) {
         console.info(
-          `[lap] COMPLETE ${(elapsed / 1000).toFixed(2)}s dirty=${this.dirty} offRoad=${this.offRoadMs | 0}ms`
+          `[lap] COMPLETE ${(elapsed / 1000).toFixed(2)}s dirty=${this.dirty} offRoad=${this.offRoadMs | 0}ms` +
+            (isNewBest ? ' [new best -> ghost]' : '')
         )
       }
     } else {
@@ -168,6 +183,9 @@ export class LapTracker {
     this.lastT = t
     lapState.lapElapsedMs = 0
     useGameStore.getState().setCurrentLapDirty(false)
+    // Start capturing this lap's pose trace. It becomes the ghost only if the lap
+    // completes clean AND beats the best (see onLineCrossed); otherwise discarded.
+    ghostRecorder.start()
   }
 
   /**
@@ -176,6 +194,8 @@ export class LapTracker {
    */
   onTeleport(nowMs: number): void {
     if (this.armed) useGameStore.getState().voidLap()
+    // The lap in progress dies, so its ghost recording does too.
+    ghostRecorder.discard()
     this.armed = false
     this.passed.fill(false)
     this.offRoadMs = 0

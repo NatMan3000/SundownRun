@@ -36,6 +36,7 @@ import { ROAD_WIDTH, getSpawn, getTerrainHeight, nearestRoadPoint } from '../cor
 
 import { carVisual } from './carVisual'
 import type { CarBodyHandle } from './carVisual'
+import { ghostRecorder } from './ghost'
 import { LapTracker } from './lapTracker'
 import { vehicleSignals } from './vehicleSignals'
 import {
@@ -705,6 +706,13 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       // accounting off `onRoad`. Costs nothing beyond what onRoad already paid.
       lap.update(rp.t, speedKmh, performance.now(), telemetry.onRoad)
     }
+
+    // ----- ghost lap recording -----
+    // Fed the raw 60Hz pose; the recorder decimates to 20Hz internally and only
+    // records while a lap is armed (lap.update above starts/stops it). No-op and
+    // near-free when idle. _pos and _q still hold this step's chassis pose - the
+    // teleport paths returned long before here, so a reset frame is never sampled.
+    ghostRecorder.sample(_pos, _q)
 
     // ----- auto reset: fell off the world, or landed on the roof -----
     if (_pos.y < STATE.fallY) {

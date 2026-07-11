@@ -4,6 +4,7 @@ import { Physics } from '@react-three/rapier'
 import { CONFIG } from './core/config'
 import { World } from './world/World'
 import { Vehicle } from './vehicle/Vehicle'
+import { GhostCar } from './vehicle/GhostCar'
 import { ChaseCamera } from './vehicle/ChaseCamera'
 import { Lighting } from './fx/Lighting'
 import { Effects } from './fx/Effects'
@@ -27,6 +28,8 @@ export default function App() {
             <World />
             <Vehicle />
           </Physics>
+          {/* Purely visual - no physics body, so it lives OUTSIDE <Physics>. */}
+          <GhostCar />
           <FxRoot />
           <Delights />
           <Lighting />
