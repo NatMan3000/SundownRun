@@ -433,6 +433,47 @@ boost()</pre>
   whole thing got made, and now you're one of the people making it.</p>
 </section>
 
+<section id="ch11" data-title="Running your game">
+  <div class="chip">REFERENCE · KEEP THIS HANDY</div>
+  <h2>Running your game - the four buttons</h2>
+  <p>Everything lives in the game folder as double-clickable <b>.bat</b> files (each one is
+  just a small script - the links below open them in VS Code so you can read exactly what
+  they do. Spoiler: no magic, just steps).</p>
+
+  <div class="mission"><div class="lvl">PLAY</div><h4><a data-file="Sundown Run.bat" data-line="1">Sundown Run.bat</a></h4>
+  <p>Starts the game at <code>http://localhost:5199</code>. First ever run installs what it
+  needs (takes a minute); after that it starts in seconds. Close the black window to stop.
+  While it runs, every file you save updates the game instantly - that is how all the
+  missions work.</p></div>
+
+  <div class="mission"><div class="lvl">MULTIPLAYER</div><h4><a data-file="Sundown Run Multiplayer.bat" data-line="1">Sundown Run Multiplayer.bat</a></h4>
+  <p>Only ONE computer runs this - the host. It prints two links: one for the host, one for
+  everyone else on the wifi. Friends need NOTHING installed - the game streams straight off
+  the host's machine into their browser. First run asks for one admin YES (that is the
+  Windows Firewall rule that lets friends in - without it Windows silently blocks them).</p>
+  <p>Change <code>name=</code> in the link for your name tag, <code>color=</code> for your
+  paint. Press <b>G</b> (or X on the controller) in-game for a proper 3-2-1 race. And heads
+  up: everyone plays with the HOST's <code>config.ts</code> - your knob tweaks apply to the
+  whole lobby.</p></div>
+
+  <div class="mission"><div class="lvl">MAP</div><h4><a data-file="Sundown Run Map Gen.bat" data-line="1">Sundown Run Map Gen.bat</a></h4>
+  <p>Rebuilds <code>World Map.html</code> from the game code and opens it. Run it after you
+  change the world - new playground, new geyser, new banked corner - so the map shows what
+  you built (your creation gets its own clickable marker, automatically).</p></div>
+
+  <div class="mission"><div class="lvl">UPDATE / DO-OVER</div><h4><a data-file="Sundown Run Update.bat" data-line="1">Sundown Run Update.bat</a></h4>
+  <p>Downloads the newest official version and resets the folder to a perfect fresh copy.
+  <b>It deletes your local changes</b> - that is its whole job. In the official folder it is
+  the update button; in YOUR folder (<code>SundownRun-Josh</code>) it is the big red do-over
+  button for when an experiment goes properly sideways. Your best laps and high scores
+  survive - they live in the browser, not the folder.</p></div>
+
+  <p class="hint" style="font-size:13px; opacity:.65">Mac/Linux corner: the same four are
+  <code>bun run start</code>, <code>bun run mp</code>, <code>bun run map</code> and
+  <code>git reset --hard origin/main</code>.</p>
+</section>
+
+
 </main>
 <script>
 // ---------- file:line links -> VS Code (or GitHub away from the repo) ----------
@@ -475,9 +516,15 @@ const spy = new IntersectionObserver((entries) => {
   // topmost visible section wins; if none visible (fast scroll), keep the last
   let best = null;
   for (const s of sections) if ((visible.get(s.id) || 0) > 0) { best = s.id; break; }
+  // at the very bottom of the page the last section wins outright - "topmost
+  // visible" would otherwise never reach a short final chapter
+  if (innerHeight + scrollY >= document.body.scrollHeight - 40) best = sections[sections.length - 1].id;
   if (best) setActive(best);
 }, { rootMargin: '-10% 0px -55% 0px', threshold: [0, 0.05, 0.25] });
 sections.forEach(s => spy.observe(s));
+addEventListener('scroll', () => {
+  if (innerHeight + scrollY >= document.body.scrollHeight - 40) setActive(sections[sections.length - 1].id);
+}, { passive: true });
 setActive(sections[0].id);
 
 function markDone(sec) {
