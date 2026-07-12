@@ -124,6 +124,10 @@ Open `src/core/config.ts`. Every number in there is a knob - car colour, engine
 power, grip, camera, time of day. Change one, save, and the game updates in the
 browser instantly. Start with `carColor`.
 
+**Reset your records:** press F12 in the game, click Console, type
+`localStorage.clear()` and press Enter, then refresh. High score, best lap,
+best combo and the ghost all start fresh (your car choice resets too).
+
 ### Your own version of the game
 
 You can have TWO copies of the game on your computer:

@@ -61,7 +61,9 @@ const TRACE_VERSION = 2
 // values AND resets the already-loaded in-memory bestLapMs via the store's public
 // setState - store.ts reads localStorage at module-init, before this runs, so clearing
 // storage alone would leave the stale best sitting in memory until a reload.
-const START_LINE_EPOCH = 2
+// Epoch 3: the hairpin + last corner were BANKED (terrain.ts BANKS) - a lap
+// time or ghost driven on the flat corners is not comparable to the new track.
+const START_LINE_EPOCH = 3
 const EPOCH_KEY = 'sundown-run.lapEpoch'
 
 function migrateStaleRecords(): void {

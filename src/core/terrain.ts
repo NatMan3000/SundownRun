@@ -920,6 +920,68 @@ const RF = new Float32Array(DENSE) // width flare at this sample
   }
 }
 
+// ---------- banked corners ----------
+//
+// Two corners are BANKED: the corridor tilts as a plane about the centre line,
+// dropping toward the inside of the turn. Zero at the centre line, so the
+// spline's own elevation profile is untouched - the centre of the road is
+// exactly where it always was, the outside edge rises, the inside edge dips.
+// Because getTerrainHeight carries the tilt, EVERYTHING inherits it for free:
+// the heightfield collider (real banked physics), the terrain mesh, prop
+// resting heights. The drawn road ribbon applies the identical formula
+// per-vertex (world/Road.tsx).
+//
+// Anchored by world position like JUMPS, resolved against the dense table.
+// `slope` is the lateral gradient (0.2 = outside edge of a 12 m half-width
+// corridor sits ~2.4 m above centre); full bank held for holdM metres of arc
+// around the anchor, smoothstepped to zero over rampM on each side. The turn
+// direction is read from the road itself (tangent cross around the anchor),
+// so re-authoring the circuit cannot silently bank the wrong way.
+const BANKS = [
+  { anchor: [8, 168] as const, holdM: 110, rampM: 40, slope: 0.2 }, //     the hairpin
+  { anchor: [-390, -350] as const, holdM: 150, rampM: 50, slope: 0.19 }, // last corner onto the south straight
+]
+
+const RBX = new Float32Array(DENSE) // bank "downhill" vector: points toward the
+const RBZ = new Float32Array(DENSE) // turn centre, magnitude = lateral slope
+
+{
+  const spacing = ROAD_LENGTH / DENSE
+  for (const spec of BANKS) {
+    // nearest dense sample to the anchor
+    let s0 = 0
+    let bd = Infinity
+    for (let i = 0; i < DENSE; i++) {
+      const dx = RX[i] - spec.anchor[0]
+      const dz = RZ[i] - spec.anchor[1]
+      const d2 = dx * dx + dz * dz
+      if (d2 < bd) {
+        bd = d2
+        s0 = i
+      }
+    }
+    // which way does this corner turn? tangent cross over a +/-20 m window
+    const W = Math.max(1, Math.round(20 / spacing))
+    const ia = (s0 - W + DENSE) % DENSE
+    const ib = (s0 + W) % DENSE
+    const sgn = Math.sign(RTX[ia] * RTZ[ib] - RTZ[ia] * RTX[ib]) || 1
+
+    const half = spec.holdM / 2
+    for (let i = 0; i < DENSE; i++) {
+      const ds = Math.abs(wrapDelta(i * spacing, s0 * spacing, ROAD_LENGTH))
+      if (ds >= half + spec.rampM) continue
+      let k = 1
+      if (ds > half) {
+        const t = (ds - half) / spec.rampM
+        k = 1 - t * t * (3 - 2 * t)
+      }
+      // toward-centre = the side the tangent bends toward: sgn * perp(tangent)
+      RBX[i] += sgn * -RTZ[i] * spec.slope * k
+      RBZ[i] += sgn * RTX[i] * spec.slope * k
+    }
+  }
+}
+
 /**
  * Read-only view of the road, sampled at ~0.95 m. World generation walks this
  * instead of hammering the curve's binary search.
@@ -932,6 +994,9 @@ export const ROAD_DENSE = {
   tx: RTX as Readonly<Float32Array>,
   tz: RTZ as Readonly<Float32Array>,
   flare: RF as Readonly<Float32Array>,
+  /** banked-corner tilt vector (see BANKS above) - zero on unbanked road */
+  bx: RBX as Readonly<Float32Array>,
+  bz: RBZ as Readonly<Float32Array>,
   spacing: ROAD_LENGTH / DENSE,
 }
 
@@ -1003,6 +1068,8 @@ let _py = 0
 let _pz = 0
 let _pflare = 0
 let _pt = 0
+let _pbx = 0 // interpolated bank tilt vector at the projected point
+let _pbz = 0
 
 /**
  * Exact XZ distance from (x,z) to the road polyline near sample `i`, projecting
@@ -1031,6 +1098,8 @@ function projectRoad(i: number, x: number, z: number): number {
       _pz = pz
       _py = RY[a] + (RY[b] - RY[a]) * t
       _pflare = RF[a] + (RF[b] - RF[a]) * t
+      _pbx = RBX[a] + (RBX[b] - RBX[a]) * t
+      _pbz = RBZ[a] + (RBZ[b] - RBZ[a]) * t
       _pt = (a + t) / DENSE
     }
   }
@@ -1047,15 +1116,21 @@ export function getTerrainHeight(x: number, z: number): number {
   } else {
     const d = projectRoad(i, x, z)
     const half = FLATTEN_HALF + _pflare
+    // Banked corners: the corridor is a tilted plane - dropping toward the
+    // turn centre, zero drop at the centre line. _pbx/_pbz are zero on all
+    // unbanked road, where this reduces to the old flat corridor exactly.
+    // The tilt extends linearly into the blend zone, so the outside of a bank
+    // reads as an embankment and the inside as a cutting.
+    const road = _py - ((x - _px) * _pbx + (z - _pz) * _pbz)
     if (d <= half) {
-      h = _py
+      h = road
     } else {
       const b = (d - half) / BLEND
       if (b >= 1) {
         h = baseHeight(x, z)
       } else {
         const s = b * b * (3 - 2 * b)
-        h = _py * (1 - s) + baseHeight(x, z) * s
+        h = road * (1 - s) + baseHeight(x, z) * s
       }
     }
   }

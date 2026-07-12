@@ -44,14 +44,18 @@ function buildGeometry(): THREE.BufferGeometry {
 
     const nx = D.tz[i] //  left/right normal in the xz plane
     const nz = -D.tx[i]
-    const y = D.y[i] + SURFACE_LIFT
 
     for (let c = 0; c < cols; c++) {
       const lat = COLS[c] * half
       const v = r * cols + c
-      position[v * 3] = D.x[i] + nx * lat
-      position[v * 3 + 1] = y
-      position[v * 3 + 2] = D.z[i] + nz * lat
+      const vx = D.x[i] + nx * lat
+      const vz = D.z[i] + nz * lat
+      // Banked corners: identical tilt formula to getTerrainHeight, so the
+      // drawn asphalt stays welded to the collider through the banking.
+      const bank = (vx - D.x[i]) * D.bx[i] + (vz - D.z[i]) * D.bz[i]
+      position[v * 3] = vx
+      position[v * 3 + 1] = D.y[i] - bank + SURFACE_LIFT
+      position[v * 3 + 2] = vz
       uv[v * 2] = (COLS[c] + 1) * 0.5
       uv[v * 2 + 1] = (arc / ROAD_LENGTH) * vRepeat
     }
