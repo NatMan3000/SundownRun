@@ -1,7 +1,14 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import { fbm2D, hash2D } from '../core/random'
-import { RIM_RISE, playgroundWear, rimHeightAt, roadDistance } from '../core/terrain'
+import {
+  RIM_RISE,
+  playgroundWear,
+  rimHeightAt,
+  roadBankMagnitude,
+  roadDistance,
+  roadEdgeDistance,
+} from '../core/terrain'
 import { TERRAIN_RES, getHeightLattice, latticeCoord, latticeNormal } from './heightfield'
 import { makeTerrainDetailTexture } from './textures'
 
@@ -63,8 +70,22 @@ function buildGeometry(): THREE.BufferGeometry {
     const z = latticeCoord(iz)
     for (let ix = 0; ix < N; ix++) {
       const x = latticeCoord(ix)
-      const y = h[ix + iz * N]
+      let y = h[ix + iz * N]
       const v = ix + iz * N
+
+      // Banked corners: the road there is a TWISTED surface, and this mesh's
+      // 6.25 m triangles bulge up to ~9 cm above it mid-cell - clean through
+      // the ribbon's 1.5 cm lift, which reads as dirt patches on the asphalt.
+      // Tuck the VISUAL terrain under the ribbon through the banking (full on
+      // the road, gone 1.5 m past the verge). The collider reads the untouched
+      // lattice, so the physics surface does not move.
+      const edge = roadEdgeDistance(x, z, 4)
+      if (edge < 1.5) {
+        const bank = roadBankMagnitude(x, z, 24)
+        if (bank > 0.02) {
+          y -= 0.16 * (1 - smoothstep(0, 1.5, edge)) * smoothstep(0.02, 0.06, bank)
+        }
+      }
 
       position[v * 3] = x
       position[v * 3 + 1] = y

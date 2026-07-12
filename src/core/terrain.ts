@@ -1157,6 +1157,18 @@ export function roadEdgeDistance(x: number, z: number, searchRadius: number): nu
 }
 
 /**
+ * Magnitude of the banked-corner tilt (m per m of lateral offset) at the road
+ * point nearest (x,z). Zero on unbanked road and away from the road entirely.
+ * The terrain mesh uses this to duck under the ribbon through the banking.
+ */
+export function roadBankMagnitude(x: number, z: number, maxR: number): number {
+  const i = nearestSample(x, z, maxR)
+  if (i < 0) return 0
+  projectRoad(i, x, z)
+  return Math.hypot(_pbx, _pbz)
+}
+
+/**
  * Nearest point on the road to world (x,z). Allocates the result - fine for
  * occasional calls (reset, spawn, world generation); per-frame callers should
  * advance along the spline with getPointAt(t) instead.

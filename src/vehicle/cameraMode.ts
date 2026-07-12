@@ -102,8 +102,8 @@ export const CAMERA_RIGS: Record<CameraMode, CameraRig> = {
     distance: 0,
     height: 0,
     // Chassis-local, just above the nose. The road surface is local y = -0.542.
-    mountY: 0.32,
-    mountZ: 1.5,
+    mountY: 0.5, //0.32
+    mountZ: 0.0, //1.5
     velocityBlendBase: 0,
     velocityBlendSlip: 0,
     lookAhead: 14,
