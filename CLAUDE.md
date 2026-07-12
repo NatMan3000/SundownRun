@@ -44,6 +44,10 @@ Multiplayer activation is URL-driven (`?mp=1&name=JOSH&color=red`) because both 
   - **look** - lighting, post-processing, materials, sky
   - **avui** - audio, HUD, UI, title screen, garage
 
+## World canon
+
+The world is the caldera of an old volcano (Nathan + Josh ruling, 2026-07-12) - the rim IS the crater rim, and new features should lean volcanic. First wave: **geysers** (`src/world/Geysers.tsx` - rhythmic steam vents that hurl the car skyward, `CONFIG.geysers`) and the **cinder cone** (a breached crater landform, `PLAYGROUNDS` kind `'cone'`, hiding shard #11). Candidate future ideas (discussed, not built): dozing rumble + tremor, fumaroles + basalt-flow paint on the rim, cracked-mud playa. No caves/lava tubes - heightfield terrain cannot do overhangs.
+
 ## Dev surfaces
 
 - `?demo=1` - scripted autopilot lap segment, records frame times to `window.__perf` (used by the performance checks)

@@ -9,6 +9,7 @@ import { Rocks } from './Rocks'
 import { StartLine } from './StartLine'
 import { RimRuns } from './RimRuns'
 import { CrashProps } from './CrashProps'
+import { Geysers } from './Geysers'
 import { Colliders } from './Colliders'
 import { windUniforms } from './wind'
 
@@ -45,6 +46,7 @@ export function World() {
       <StartLine />
       <RimRuns />
       <CrashProps />
+      <Geysers />
       <Grass />
       <Trees />
       <Rocks />

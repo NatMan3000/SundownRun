@@ -76,6 +76,12 @@ function overGround(t: number, lateral: number, height: number): THREE.Vector3 {
   return new THREE.Vector3(x, getTerrainHeight(x, z) + height, z)
 }
 
+/** Hovering above the terrain at an absolute world spot (for landmarks that are
+ *  places in their own right, not road-relative - e.g. the cinder cone crater). */
+function atWorld(x: number, z: number, height: number): THREE.Vector3 {
+  return new THREE.Vector3(x, getTerrainHeight(x, z) + height, z)
+}
+
 interface ShardDef {
   position: THREE.Vector3
   /** off the road, has to be hunted for */
@@ -104,6 +110,10 @@ function buildShards(): ShardDef[] {
     { position: overRoad(jump2 + along(AIR_LEAD), 0, AIR_HEIGHT), hidden: false, air: true, where: 'over crest jump 2' },
     { position: overRoad(0.815, 3.0, 1.7), hidden: false, air: false, where: 'west sweeper' },
     { position: overGround(switchbackIn, -42, 1.5), hidden: true, air: false, where: 'the ridge between the switchback legs' },
+    // #11 sits at the bottom of the cinder cone's crater (core/terrain.ts
+    // PLAYGROUNDS 'cone' at [-190, -285]) - the walls are too steep to drive
+    // out, so collecting it means committing to the drop and the breach exit.
+    { position: atWorld(-190, -285, 1.6), hidden: true, air: false, where: 'inside the cinder cone crater' },
   ]
 }
 

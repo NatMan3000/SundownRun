@@ -89,7 +89,7 @@ function gaussUV(u: number, v: number, su: number, sv: number): number {
 // well inside the rim, and none of them is near either of the two hidden sun shards
 // (world/Delights.tsx puts those 24 m and 42 m off the road).
 
-export type PlaygroundKind = 'kicker' | 'double' | 'bowl' | 'table' | 'ramp' | 'bigair'
+export type PlaygroundKind = 'kicker' | 'double' | 'bowl' | 'table' | 'ramp' | 'bigair' | 'cone'
 
 export interface Playground {
   x: number
@@ -167,6 +167,17 @@ export const PLAYGROUNDS: readonly Playground[] = [
     what: 'west big-air: the same dare, sunset side',
   },
 
+  // ---------- the cinder cone: the old volcano's last gasp, out in the south infield ----------
+  // A circular rampart with a crater inside and a BREACH (drive-in notch) on the
+  // road-facing side - real cinder cones are born broken. Enter through the breach,
+  // or jump the rim from outside and drop 17 m into the crater. The walls are too
+  // steep to climb back out: the breach is the only exit, which makes the crater a
+  // place, not just a bump. Shard #11 lives at the bottom (world/Delights.tsx).
+  {
+    x: -190, z: -285, heading: -1.5708, kind: 'cone', reach: 110,
+    what: "the cinder cone - the old volcano's last gasp. Drive in through the breach (south side), or jump the rim and drop into the crater",
+  },
+
   // ---------- rim kickers: jumps out on the valley-edge benches, under the mountains ----------
   // Sitting on the flat shelf just inside the rim foot (rim height ~0-6 m here, so the
   // ground is still drivable), each throws you back toward the infield. They give the
@@ -217,6 +228,12 @@ function playgroundHeight(x: number, z: number): number {
       h +=
         13 * gaussUV(u - 70, v, 22, 34) - //  the kicker mountain you fly off
         5 * gaussUV(u - 15, v, 20, 34) //     the dip that loads the launch
+    } else if (p.kind === 'cone') {
+      // circular rampart (gaussian ring), breached along +u (the heading side)
+      const r = Math.hypot(u, v)
+      const ring = 18 * Math.exp(-((r - 44) * (r - 44)) / (2 * 19 * 19))
+      const a = Math.atan2(Math.abs(v), u) // 0 = straight out through the breach
+      h += ring * (1 - 0.82 * Math.exp(-(a * a) / (2 * 0.34 * 0.34)))
     } else {
       // flat top between two steep ramps
       h += 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
@@ -271,6 +288,12 @@ function playgroundHeightOne(p: Playground, dx: number, dz: number): number {
     return (
       13 * gaussUV(u - 70, v, 22, 34) - 5 * gaussUV(u - 15, v, 20, 34)
     )
+  }
+  if (p.kind === 'cone') {
+    const r = Math.hypot(u, v)
+    const ring = 18 * Math.exp(-((r - 44) * (r - 44)) / (2 * 19 * 19))
+    const a = Math.atan2(Math.abs(v), u)
+    return ring * (1 - 0.82 * Math.exp(-(a * a) / (2 * 0.34 * 0.34)))
   }
   return 9 * (smoothstep01((u + 38) / 30) - smoothstep01((u - 38) / 30)) * gaussUV(0, v, 1, 32)
 }

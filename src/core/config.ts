@@ -36,6 +36,7 @@ export const CONFIG = {
   // ---------- TRICKS ----------
   tricks: true, //        true = score points for jumps, spins and flips
   bouncyRocks: true, //   true = rocks launch you skyward, false = rocks just hurt
+  geysers: true, //       steam vents that BLAST you into the sky - watch for the hiss, time your drive-over
 
   // ---------- GHOST (race your best lap) ----------
   ghost: true, //         true = a glowing "ghost" of your best lap races you every lap
