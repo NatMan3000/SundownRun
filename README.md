@@ -127,8 +127,9 @@ browser instantly. Start with `carColor`.
 **Explore the world from above:** double-click **`World Map.html`**. It shows
 the whole 2 km world - every jump, banked corner, playground toy and sun shard
 (even the hidden ones... spoilers) - and clicking anything tells you which bit
-of code makes it. The map is generated FROM the game code (`bun run map`
-rebuilds it), so it is never out of date.
+of code makes it. The map is generated FROM the game code, so after you change
+the world, double-click **`Sundown Run Map Gen.bat`** (or `bun run map`) and it
+rebuilds and opens the fresh map.
 
 **Reset your records:** press F12 in the game, click Console, type
 `localStorage.clear()` and press Enter, then refresh. High score, best lap,
@@ -138,7 +139,7 @@ best combo and the ghost all start fresh (your car choice resets too).
 
 You can have TWO copies of the game on your computer:
 
-- **`SundownRun`** - the official one. Run `Get Updates.bat` in here to get the
+- **`SundownRun`** - the official one. Run `Sundown Run Update.bat` in here to get the
   newest jumps and features. Don't build stuff in this one - updates replace it.
 - **`SundownRun-Josh`** - YOURS. Change any file you like, break anything you
   like. The official copy is never touched, so the game always still works.
@@ -151,7 +152,7 @@ git clone https://github.com/NatMan3000/SundownRun.git SundownRun-Josh
 
 Inside your copy, `Sundown Run.bat` starts YOUR version (close the other game
 window first - they share the same door). And if your code goes properly bad
-and you want a do-over, run `Get Updates.bat` inside YOUR folder - it resets
+and you want a do-over, run `Sundown Run Update.bat` inside YOUR folder - it resets
 your copy back to a perfect fresh version of the official game, including
 removing any new files you added. (It deletes your changes, so it is the big
 red do-over button, not a save button.)

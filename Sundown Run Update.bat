@@ -1,10 +1,10 @@
 @echo off
 setlocal
-title Sundown Run - Get Updates
+title Sundown Run - Update
 cd /d "%~dp0"
 
 echo.
-echo   Sundown Run - Get Updates
+echo   Sundown Run - Update
 echo   ====================================
 echo.
 
