@@ -49,7 +49,7 @@ ${bold}${amber}  SUNDOWN RUN - MULTIPLAYER${reset}
   Everyone who opens a link joins the same world. Ctrl+C stops it all.
 
   Friends can't connect? This computer's firewall must allow ports
-  5199-5200 in. On Windows, run Multiplayer.bat - it adds the rule.${reset}
+  5199-5200 in. On Windows, run Sundown Run Multiplayer.bat - it adds the rule.${reset}
 `)
 }, 900)
 

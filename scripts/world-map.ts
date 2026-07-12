@@ -197,7 +197,7 @@ markers.push({
   icon: '✦',
   cls: 'shard',
   title: 'Sun shards - the SHARD HUNT',
-  what: 'Ten shards scatter to fresh random spots every reset: six over the road, one high over a crest jump, one high over a geyser (ride the blast up), two hidden in the open country. The hunt clock starts on your first pickup and stops on the last - best time is kept. Press R to deal a new round.',
+  what: 'Ten shards scatter to fresh random spots ANYWHERE in the bowl every reset - infield, benches, hilltops, sometimes right by the road - plus one high over a random geyser (ride the blast up). The hunt clock starts on your first pickup and stops on the last - best time is kept. Press R to deal a new round.',
   refs: [
     { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'function buildShards'), label: 'buildShards(round)', note: 'the deal - seeded by the round number, repeatable but never the same twice' },
     { file: 'src/core/store.ts', line: lineOf('src/core/store.ts', 'huntStartedAt'), label: 'shard hunt clock', note: 'first pickup starts it, last one stops it, best persists' },

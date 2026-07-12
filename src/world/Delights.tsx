@@ -25,14 +25,7 @@ import { useFrame } from '@react-three/fiber'
 import { telemetry } from '../core/telemetry'
 import { useGameStore } from '../core/store'
 import { mulberry32 } from '../core/random'
-import {
-  JUMPS,
-  ROAD_LENGTH,
-  getTerrainHeight,
-  nearestRoadPoint,
-  roadDistance,
-  roadSpline,
-} from '../core/terrain'
+import { getTerrainHeight } from '../core/terrain'
 import { vehicleSignals } from '../vehicle/vehicleSignals'
 import { VENTS } from './Geysers'
 import * as audio from '../audio/AudioEngine'
@@ -41,47 +34,9 @@ import * as audio from '../audio/AudioEngine'
 const PICKUP_RADIUS = 3.5
 const PICKUP_R2 = PICKUP_RADIUS * PICKUP_RADIUS
 
-/**
- * Air shard height above the road, metres. Deliberately just out of reach: the
- * car's body rides 0.54m up, so a slow pass along the centre line comes 3.82m
- * close and the 3.5m sphere misses it. Measured in-game: 56km/h over the crest
- * leaves it sitting there, ~150km/h+ takes it. It is a speed reward, not a
- * strict airborne check - suspension unload over the crest counts.
- */
-const AIR_HEIGHT = 4.3
-/** Metres past the crest, where the car is highest over the drop-away. */
-const AIR_LEAD = 34
-
 const POP_SECONDS = 0.25
 
 // ---------- placement ----------
-
-const _p = new THREE.Vector3()
-const _tan = new THREE.Vector3()
-
-/** metres along the circuit -> spline parameter */
-const along = (m: number) => m / ROAD_LENGTH
-
-/** Wrap into [0,1) - the road is a closed loop. */
-const wrap = (t: number) => ((t % 1) + 1) % 1
-
-/** Left-hand normal of the road in the xz plane, written into (outX, outZ). */
-function lateralOffset(t: number, lateral: number): [number, number] {
-  roadSpline.getTangentAt(wrap(t), _tan)
-  let nx = -_tan.z
-  let nz = _tan.x
-  const len = Math.hypot(nx, nz) || 1
-  nx /= len
-  nz /= len
-  return [nx * lateral, nz * lateral]
-}
-
-/** Hovering above the road surface. */
-function overRoad(t: number, lateral: number, height: number): THREE.Vector3 {
-  roadSpline.getPointAt(wrap(t), _p)
-  const [ox, oz] = lateralOffset(t, lateral)
-  return new THREE.Vector3(_p.x + ox, _p.y + height, _p.z + oz)
-}
 
 /** Hovering above the terrain at an absolute world spot. */
 function atWorld(x: number, z: number, height: number): THREE.Vector3 {
@@ -108,25 +63,30 @@ function buildShards(round: number): ShardDef[] {
   const rng = mulberry32(0x5da2d ^ (round * 2654435761))
   const out: ShardDef[] = []
 
-  // 6 over the road: random spot around the lap, random lane position
-  for (let i = 0; i < 6; i++) {
+  // 9 scattered ANYWHERE in the bowl (Nathan's call: a map-wide hunt, not a
+  // lap chore). The only rule is drivable ground: inside the rim, on a slope
+  // a car can actually reach - which quietly allows the road, the infield,
+  // playground tops and the benches under the mountains alike.
+  for (let i = 0; i < 9; i++) {
+    let x = 0
+    let z = 0
+    for (let attempt = 0; attempt < 80; attempt++) {
+      x = (rng() * 2 - 1) * 640
+      z = (rng() * 2 - 1) * 640
+      if (Math.hypot(x, z) > 640) continue
+      const e = 3
+      const gx = getTerrainHeight(x + e, z) - getTerrainHeight(x - e, z)
+      const gz = getTerrainHeight(x, z + e) - getTerrainHeight(x, z - e)
+      if (Math.hypot(gx, gz) / (2 * e) > 0.3) continue
+      break
+    }
     out.push({
-      position: overRoad(rng(), (rng() * 2 - 1) * 3.4, 1.65),
-      hidden: false,
+      position: atWorld(x, z, 1.6),
+      hidden: true,
       air: false,
-      where: 'over the road somewhere - drive the lap',
+      where: 'somewhere out there - go hunting',
     })
   }
-
-  // 1 high over a random crest jump - airborne or nothing
-  const j = JUMPS[Math.floor(rng() * JUMPS.length) % JUMPS.length]
-  const jt = nearestRoadPoint(j.anchor[0], j.anchor[1]).t
-  out.push({
-    position: overRoad(jt + along(AIR_LEAD), 0, AIR_HEIGHT),
-    hidden: false,
-    air: true,
-    where: 'high over a crest jump',
-  })
 
   // 1 high over a random geyser - the blast is the ladder
   const v = VENTS[Math.floor(rng() * VENTS.length) % VENTS.length]
@@ -136,30 +96,6 @@ function buildShards(round: number): ShardDef[] {
     air: true,
     where: 'high over a geyser - ride the blast',
   })
-
-  // 2 hidden in the open country: rejection-sampled like the crash props -
-  // off the road, on ground flat enough to actually drive to
-  for (let i = 0; i < 2; i++) {
-    let x = 0
-    let z = 0
-    for (let attempt = 0; attempt < 60; attempt++) {
-      x = (rng() * 2 - 1) * 560
-      z = (rng() * 2 - 1) * 560
-      if (Math.hypot(x, z) > 560) continue
-      if (roadDistance(x, z, 25) < 24) continue
-      const e = 3
-      const gx = getTerrainHeight(x + e, z) - getTerrainHeight(x - e, z)
-      const gz = getTerrainHeight(x, z + e) - getTerrainHeight(x, z - e)
-      if (Math.hypot(gx, gz) / (2 * e) > 0.28) continue
-      break
-    }
-    out.push({
-      position: atWorld(x, z, 1.5),
-      hidden: true,
-      air: false,
-      where: 'hidden out in the open country',
-    })
-  }
 
   // The permanent one: high above the cinder cone's crater. The geyser INSIDE
   // the crater is the elevator - Nathan + Josh's design, do not reshuffle it.

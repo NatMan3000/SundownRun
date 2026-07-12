@@ -93,7 +93,7 @@ automatically. Touch the keyboard to switch back.
 
 ONE computer is the "host" (everyone needs to be on the same wifi):
 
-- **Windows:** double-click **`Multiplayer.bat`**. First time it asks for an
+- **Windows:** double-click **`Sundown Run Multiplayer.bat`**. First time it asks for an
   admin YES - that adds the Windows Firewall rule that lets friends connect
   (without it Windows silently blocks them). Don't type `npm run mp` or
   `bun run mp` into PowerShell - PowerShell blocks script shims with a
@@ -130,6 +130,13 @@ the whole 2 km world - every jump, banked corner, playground toy and sun shard
 of code makes it. The map is generated FROM the game code, so after you change
 the world, double-click **`Sundown Run Map Gen.bat`** (or `bun run map`) and it
 rebuilds and opens the fresh map.
+
+**Want to learn how the code actually works?** Double-click
+**`Learn To Code.html`** - ten chapters that teach real programming using YOUR
+game as the textbook. Every chapter has a mini-game you edit right there in the
+page (build terrain, plant forests, tune gravity), and it ends with real
+missions in the real game files. Chapter 7 tells you the deepest secret of
+every game ever made.
 
 **Reset your records:** press F12 in the game, click Console, type
 `localStorage.clear()` and press Enter, then refresh. High score, best lap,

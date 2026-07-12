@@ -20,7 +20,7 @@ if exist "%USERPROFILE%\.bun\bin\bun.exe" (
   goto :haveBun
 )
 echo   Bun is not installed - the map generator needs it.
-echo   Run Multiplayer.bat once (it offers to install Bun), or paste
+echo   Run Sundown Run Multiplayer.bat once (it offers to install Bun), or paste
 echo   this into PowerShell and then run this file again:
 echo.
 echo     powershell -c "irm bun.sh/install.ps1 | iex"

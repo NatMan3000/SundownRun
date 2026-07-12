@@ -1,0 +1,728 @@
+// ============================================================
+//  LEARN TO CODE GENERATOR - bun scripts/learn-to-code.ts
+// ------------------------------------------------------------
+//  Builds "Learn To Code.html": an interactive coding workshop for
+//  Josh, anchored entirely in Sundown Run's real code. Ten chapters,
+//  each with a live editable playground that runs in the page, and a
+//  final chapter of real missions in the actual game files (with
+//  file:line links that open VS Code, same trick as the world map).
+//
+//  Line numbers are grepped from source at generate time so the
+//  links track the code. Re-run after big refactors.
+// ============================================================
+
+const srcCache = new Map<string, string[]>()
+function lineOf(file: string, needle: string): number {
+  let lines = srcCache.get(file)
+  if (!lines) {
+    lines = require('node:fs').readFileSync(new URL('../' + file, import.meta.url), 'utf8').split('\n')
+    srcCache.set(file, lines!)
+  }
+  const i = lines!.findIndex((l) => l.includes(needle))
+  return i + 1
+}
+
+const L = {
+  enginePower: lineOf('src/core/config.ts', 'enginePower'),
+  carColor: lineOf('src/core/config.ts', 'carColor'),
+  treeSmash: lineOf('src/core/config.ts', 'treeSmashKmh'),
+  geysersKnob: lineOf('src/core/config.ts', 'geysers:'),
+  stability: lineOf('src/core/config.ts', 'stability'),
+  playgrounds: lineOf('src/core/terrain.ts', 'export const PLAYGROUNDS'),
+  banks: lineOf('src/core/terrain.ts', 'export const BANKS'),
+  vents: lineOf('src/world/Geysers.tsx', 'export const VENTS'),
+  geyserTrick: lineOf('src/world/Geysers.tsx', "emitTrick('GEYSER LAUNCH'"),
+  launchVy: lineOf('src/world/Geysers.tsx', 'const LAUNCH_VY'),
+  terrainHeight: lineOf('src/core/terrain.ts', 'export function getTerrainHeight'),
+  physicsStep: lineOf('src/vehicle/useVehiclePhysics.ts', 'useBeforePhysicsStep'),
+  carBodyType: lineOf('src/core/store.ts', "export type CarBodyId"),
+  buildShards: lineOf('src/world/Delights.tsx', 'function buildShards'),
+  roadShards: lineOf('src/world/Delights.tsx', '6 over the road'),
+  bestLap: lineOf('src/core/store.ts', 'loadBestLap'),
+}
+
+const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sundown Run - Learn To Code</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --cream:#F2E8D5; --amber:#FFB35C; --gold:#FFE7B0; --bg:#1A1410; --panel:#241B14;
+          --edge:rgba(255,179,92,.22); --code:#17110C; --green:#9FE88F; --red:#FF9B8A; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--cream); font-family:system-ui,sans-serif;
+         display:flex; min-height:100vh; }
+  nav { width:250px; padding:22px 14px; border-right:1px solid var(--edge); position:sticky;
+        top:0; height:100vh; overflow-y:auto; flex:none; background:var(--panel); }
+  nav h1 { font-size:15px; letter-spacing:.1em; color:var(--amber); margin-bottom:2px; }
+  nav .sub { font-size:11px; opacity:.55; margin-bottom:14px; }
+  nav a { display:flex; gap:8px; align-items:baseline; padding:7px 10px; border-radius:8px;
+          color:var(--cream); text-decoration:none; font-size:13px; margin-bottom:2px; }
+  nav a:hover { background:rgba(255,179,92,.1); }
+  nav a .n { font-family:ui-monospace,monospace; font-size:11px; color:var(--amber); opacity:.8; width:18px; flex:none; }
+  nav a .tick { margin-left:auto; color:var(--green); opacity:0; }
+  nav a.done .tick { opacity:1; }
+  main { flex:1; max-width:840px; margin:0 auto; padding:34px 44px 120px; }
+  section { margin-bottom:70px; scroll-margin-top:20px; }
+  h2 { color:var(--amber); font-size:24px; margin-bottom:4px; }
+  .chip { font-size:11px; letter-spacing:.14em; color:var(--gold); opacity:.7; }
+  p { font-size:15px; line-height:1.65; margin:12px 0; max-width:64ch; }
+  b { color:var(--gold); }
+  .real { background:var(--code); border:1px solid var(--edge); border-radius:10px;
+          padding:14px 16px; margin:16px 0; overflow-x:auto; }
+  .real .tag { font-size:10.5px; letter-spacing:.12em; color:var(--amber); opacity:.75;
+               display:flex; gap:10px; align-items:center; margin-bottom:8px; }
+  .real .tag a { color:#FFCE8A; text-decoration:none; background:rgba(255,179,92,.12);
+                 border-radius:5px; padding:2px 7px; font:11px ui-monospace,monospace; letter-spacing:0; }
+  .real .tag a:hover { background:rgba(255,179,92,.25); }
+  pre, textarea { font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  pre { color:#E8DCC5; white-space:pre; }
+  .k { color:#FF9B6A; } .s { color:#A8D8A0; } .n2 { color:#8FC7FF; } .c { color:#8a7a62; font-style:italic; }
+  .play { border:1px solid var(--edge); border-radius:12px; margin:18px 0; overflow:hidden; }
+  .play .bar { display:flex; align-items:center; gap:10px; padding:8px 12px;
+               background:rgba(255,179,92,.07); border-bottom:1px solid var(--edge); }
+  .play .bar .t { font-size:11.5px; letter-spacing:.14em; color:var(--amber); }
+  .play button { margin-left:auto; background:var(--amber); color:#241B14; border:0;
+                 font:600 12.5px system-ui; padding:6px 16px; border-radius:8px; cursor:pointer; }
+  .play button.ghost { margin-left:0; background:transparent; color:var(--amber);
+                       border:1px solid var(--edge); }
+  .play button:hover { filter:brightness(1.1); }
+  textarea { display:block; width:100%; background:var(--code); color:#E8DCC5; border:0;
+             padding:12px 14px; resize:vertical; min-height:100px; outline:none; tab-size:2; }
+  canvas { display:block; width:100%; background:linear-gradient(#3a2f4a 0%, #8a5a3a 55%, #C9A85C 56%, #b8974e 100%); }
+  .msg { padding:7px 12px; font:12.5px ui-monospace,monospace; min-height:30px; }
+  .msg.err { color:var(--red); } .msg.ok { color:var(--green); }
+  .quiz { border:1px solid var(--edge); border-radius:12px; padding:14px 16px; margin:14px 0; background:var(--code); }
+  .quiz pre { margin-bottom:10px; }
+  .quiz .btns { display:flex; gap:10px; }
+  .quiz button { background:transparent; color:var(--cream); border:1px solid var(--edge);
+                 padding:6px 18px; border-radius:8px; font:600 13px system-ui; cursor:pointer; }
+  .quiz button:hover { border-color:var(--amber); }
+  .quiz .verdict { margin-top:10px; font-size:13.5px; line-height:1.5; display:none; }
+  .mission { border:1px solid var(--edge); border-left:4px solid var(--amber); border-radius:8px;
+             padding:14px 16px; margin:14px 0; background:var(--panel); }
+  .mission h4 { color:var(--gold); font-size:15px; margin-bottom:4px; }
+  .mission .lvl { font-size:10.5px; letter-spacing:.16em; color:var(--amber); opacity:.8; }
+  .mission p { font-size:13.5px; margin:8px 0; }
+  .mission code, p code { font:12px ui-monospace,monospace; background:var(--code); color:#E8C99A;
+             border-radius:5px; padding:2px 6px; }
+  .mission a, .wisdom a { color:#FFCE8A; }
+  .hintbox { border-left:3px solid var(--amber); background:rgba(255,179,92,.07);
+             padding:8px 12px; border-radius:0 8px 8px 0; font-size:13.5px; margin:12px 0; line-height:1.55; }
+</style>
+</head>
+<body>
+<nav id="nav">
+  <h1>LEARN TO CODE</h1>
+  <div class="sub">with Sundown Run · your game is the textbook</div>
+</nav>
+<main id="main">
+
+<section id="ch0" data-title="The big secret">
+  <div class="chip">START HERE</div>
+  <h2>The big secret: the game is just text</h2>
+  <p>Everything in Sundown Run - the mountains, the geysers, the way the car drifts -
+  is <b>text in files</b>. There is no magic. The browser reads the text, follows it like
+  a recipe, and the world exists. Change the text, and the world changes.</p>
+  <p>Here's the thing: <b>you have already coded</b>. When you changed <code>carColor</code>
+  and the car turned a different colour - that was programming. Everything on this page
+  is just <i>more of that</i>.</p>
+  <p>Two rules for this whole page:</p>
+  <p><b>1. You cannot break anything here.</b> Every playground below runs inside this page.
+  Mash it, break it, hit Reset.<br>
+  <b>2. You cannot really break the game either.</b> If your code experiments ever go properly
+  wrong, <code>Sundown Run Update.bat</code> is the do-over button - it puts everything back.</p>
+  <p>The amber <b>file:line</b> pills everywhere open VS Code at that exact line of the
+  real game. That's not example code - it's THE code your game is running right now.</p>
+</section>
+
+<section id="ch1" data-title="Numbers are knobs">
+  <div class="chip">CHAPTER 1</div>
+  <h2>Numbers are knobs</h2>
+  <p>The simplest thing code can hold is a <b>number</b>. The game reads
+  <code>enginePower</code> and multiplies the engine's push by it. That's all a knob is:
+  a number, and some other line of code that <i>uses</i> it.</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/core/config.ts" data-line="${L.enginePower}">src/core/config.ts:${L.enginePower}</a></div>
+  <pre><span class="k">enginePower</span>: <span class="n2">1.5</span>, <span class="c">// 1.5 = rocket mode, 0.6 = grandma mode</span></pre></div>
+  <p>Try it. This little drag race uses the same idea - <code>power</code> pushes the car,
+  <code>drag</code> (air resistance) pushes back. Edit the numbers, hit RUN, watch the time.</p>
+  <div class="play" data-pg="drag">
+    <div class="bar"><span class="t">PLAYGROUND · DRAG RACE</span><button class="ghost reset">Reset</button><button class="run">&#9654; RUN</button></div>
+    <textarea spellcheck="false">const power = 1.5   // try 3... try 0.3... try 30
+const drag = 0.02   // air resistance - bigger = slower top speed</textarea>
+    <canvas height="120"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">Notice <code>drag</code> matters more the faster you go - that's why
+  doubling <code>power</code> doesn't halve the time. The real game's engine works the same way
+  (<code>powerFade</code> in tuning.ts). Physics!</div>
+</section>
+
+<section id="ch2" data-title="Colours are numbers too">
+  <div class="chip">CHAPTER 2</div>
+  <h2>Colours are numbers too (in disguise)</h2>
+  <p><code>'#1FA8C9'</code> looks like a secret code. It is - but a simple one. A colour is
+  <b>three numbers</b>: how much RED, GREEN and BLUE light to mix, each from 0 to 255,
+  written in hexadecimal (base 16). <code>#1FA8C9</code> = red 31, green 168, blue 201 -
+  mostly green + blue = teal.</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/core/config.ts" data-line="${L.carColor}">src/core/config.ts:${L.carColor}</a></div>
+  <pre><span class="k">carColor</span>: <span class="s">'#1FA8C9'</span>, <span class="c">// try '#E8402A' (lava red) or '#8A2BE2' (purple)</span></pre></div>
+  <div class="play" data-pg="paint">
+    <div class="bar"><span class="t">PLAYGROUND · PAINT SHOP</span><button class="ghost reset">Reset</button><button class="run">&#9654; RUN</button></div>
+    <textarea spellcheck="false">const paint = '#1FA8C9'  // change me! '#FF0000' is pure red.
+// or build it from the three numbers yourself:
+// const paint = rgb(255, 179, 92)</textarea>
+    <canvas height="150"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">Boss move: <code>rgb(255, 0, 255)</code> - full red + full blue = magenta.
+  Zero everything = black. Max everything = white. You now know how every screen on Earth works.</div>
+</section>
+
+<section id="ch3" data-title="true / false and IF">
+  <div class="chip">CHAPTER 3</div>
+  <h2>true / false, and the mighty IF</h2>
+  <p>Some knobs aren't numbers - they're switches: <code>true</code> or <code>false</code>
+  (a <b>boolean</b>). And the most important word in all of programming is <b>if</b>:
+  <i>do this, but only when that</i>.</p>
+  <p>Real example: when you hit a tree, the game decides crunch-or-smash with an if:</p>
+  <div class="real"><div class="tag">REAL GAME CODE (the knob it reads) <a data-file="src/core/config.ts" data-line="${L.treeSmash}">src/core/config.ts:${L.treeSmash}</a></div>
+  <pre><span class="k">treeSmashKmh</span>: <span class="n2">40</span>, <span class="c">// hit a tree faster than this and it smashes away</span></pre></div>
+  <div class="play" data-pg="tree">
+    <div class="bar"><span class="t">PLAYGROUND · TREE vs CAR</span><button class="ghost reset">Reset</button><button class="run">&#9654; RUN</button></div>
+    <textarea spellcheck="false">const speed = 55          // how fast you hit the tree
+const treeSmashKmh = 40   // the threshold
+
+if (speed > treeSmashKmh) {
+  result('SMASH! the tree goes flying', 'smash')
+} else {
+  result('CRUNCH. the tree wins. ouch.', 'crunch')
+}</textarea>
+    <canvas height="130"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">Change <code>speed</code> to 39, then 40, then 41. Notice <code>&gt;</code>
+  means <i>strictly greater</i> - at exactly 40 the tree wins. Programmers argue about
+  <code>&gt;</code> vs <code>&gt;=</code> more than you'd believe.</div>
+</section>
+
+<section id="ch4" data-title="Functions are machines">
+  <div class="chip">CHAPTER 4</div>
+  <h2>Functions are machines</h2>
+  <p>A <b>function</b> is a machine: numbers go in, a number comes out. The single most
+  important machine in Sundown Run is <code>getTerrainHeight(x, z)</code> - give it any spot
+  on the map and it answers "the ground is THIS high there". The mountains, the crater,
+  the physics - all of it is that one function's answers.</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/core/terrain.ts" data-line="${L.terrainHeight}">src/core/terrain.ts:${L.terrainHeight}</a></div>
+  <pre><span class="k">export function</span> getTerrainHeight(x, z) { <span class="c">// the entire world, one machine</span></pre></div>
+  <p>Here's your own terrain machine. It gets an <code>x</code> (how far along) and returns
+  a height. The page draws its answer for every x - that line IS your function.</p>
+  <div class="play" data-pg="terrain">
+    <div class="bar"><span class="t">PLAYGROUND · BUILD A WORLD</span><button class="ghost reset">Reset</button><button class="run">&#9654; RUN</button></div>
+    <textarea spellcheck="false">function height(x) {
+  return 30 * Math.sin(x / 60)   // smooth rolling waves
+}
+// try adding bumps:  + 20 * Math.sin(x / 13)
+// try a cliff:       return x > 400 ? 80 : 10
+// try chaos:         return (x * 7919) % 97</textarea>
+    <canvas height="180"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">Add two waves of different sizes together and you get natural-looking
+  hills. That is genuinely how the game builds its valley - a few layers of waves
+  (it calls them "noise octaves") added up. You just did procedural generation.</div>
+</section>
+
+<section id="ch5" data-title="Objects describe things">
+  <div class="chip">CHAPTER 5</div>
+  <h2>Objects describe things</h2>
+  <p>A car isn't one number - it's a colour AND a power AND a name. Code groups those into an
+  <b>object</b>: curly brackets holding labelled values. Every jump and hill in the infield is
+  one object in the <code>PLAYGROUNDS</code> list:</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/core/terrain.ts" data-line="${L.playgrounds}">src/core/terrain.ts:${L.playgrounds}</a></div>
+  <pre>{ <span class="k">x</span>: <span class="n2">-168</span>, <span class="k">z</span>: <span class="n2">44</span>, <span class="k">heading</span>: <span class="n2">2.5</span>, <span class="k">kind</span>: <span class="s">'kicker'</span>, <span class="k">reach</span>: <span class="n2">135</span> }</pre></div>
+  <div class="play" data-pg="bump">
+    <div class="bar"><span class="t">PLAYGROUND · SCULPT A HILL</span><button class="ghost reset">Reset</button><button class="run">&#9654; RUN</button></div>
+    <textarea spellcheck="false">const hill = {
+  x: 300,      // where it sits
+  width: 90,   // how wide it spreads
+  height: 55,  // how tall it gets
+}</textarea>
+    <canvas height="180"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">The dot gets things back out: <code>hill.height</code> means "the height
+  inside hill". Objects inside lists inside objects - that's most of what real code is.</div>
+</section>
+
+<section id="ch6" data-title="Lists and loops">
+  <div class="chip">CHAPTER 6</div>
+  <h2>Lists, and loops that use them</h2>
+  <p>Square brackets make a <b>list</b> (an array). The geysers are a list of 4 objects.
+  The 1,342 trees? Nobody typed 1,342 trees - a <b>loop</b> ran the planting code 1,342
+  times. Loops are how tiny code makes huge worlds.</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/world/Geysers.tsx" data-line="${L.vents}">src/world/Geysers.tsx:${L.vents}</a></div>
+  <pre><span class="k">export const</span> VENTS = [ <span class="c">// a LIST of geysers - add a line, get a geyser</span></pre></div>
+  <div class="play" data-pg="forest">
+    <div class="bar"><span class="t">PLAYGROUND · PLANT A FOREST</span><button class="ghost reset">Reset</button><button class="run">&#9654; RUN</button></div>
+    <textarea spellcheck="false">for (let i = 0; i < 60; i++) {
+  const x = random() * 800     // a random spot across...
+  const y = random() * 120     // ...and down the hillside
+  plant(x, y)
+}
+// try 1000 trees. try planting in a straight line: plant(i * 12, 60)
+// try only planting SOME: if (random() > 0.5) plant(x, y)</textarea>
+    <canvas height="200"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">Read the loop out loud: "start i at 0; while i is under 60, do the middle
+  bit, then add 1 to i". The game's tree planter is this exact shape, plus rules like
+  "not on the road" - which is just an <code>if</code> inside the loop.</div>
+</section>
+
+<section id="ch7" data-title="The game loop">
+  <div class="chip">CHAPTER 7 · THE BIG ONE</div>
+  <h2>The game loop: 60 heartbeats a second</h2>
+  <p>Here is the deepest secret of every game ever made: <b>nothing actually moves</b>.
+  The game redraws the whole world 60 times a second, nudging everything a tiny bit each
+  time. Speed is just "how big is the nudge". Gravity is just "each heartbeat, nudge the
+  fall-speed down a little". Do that 60 times a second and your eye sees motion.</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/vehicle/useVehiclePhysics.ts" data-line="${L.physicsStep}">src/vehicle/useVehiclePhysics.ts:${L.physicsStep}</a></div>
+  <pre>useBeforePhysicsStep(() =&gt; { <span class="c">// everything in here happens 60 times a second</span></pre></div>
+  <p>This playground is a real, running game loop. Click the canvas (or the JUMP button)
+  to jump. Then edit the physics and RUN - feel how each number changes the <i>feel</i>.</p>
+  <div class="play" data-pg="loop">
+    <div class="bar"><span class="t">PLAYGROUND · YOUR FIRST GAME</span><button class="ghost jump">JUMP</button><button class="ghost reset">Reset</button><button class="run">&#9654; RUN</button></div>
+    <textarea spellcheck="false">const gravity = 60      // how hard the world pulls down
+const jumpPower = 45    // how hard a jump throws you up
+const speed = 120       // how fast the ground scrolls
+const bounce = 0.4      // how much of a landing bounces back (0 to 1)</textarea>
+    <canvas height="200" tabindex="0"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">Try <code>gravity = 15</code> - moon driving. Try <code>bounce = 0.95</code> -
+  a superball. This feel-tuning is EXACTLY what game developers do all day, and exactly what
+  the numbers in <code>src/vehicle/tuning.ts</code> are. There are about 100 of them.</div>
+</section>
+
+<section id="ch8" data-title="TypeScript: seatbelts">
+  <div class="chip">CHAPTER 8</div>
+  <h2>TypeScript: code with seatbelts</h2>
+  <p>Sundown Run isn't plain JavaScript - it's <b>TypeScript</b>. Same language, one addition:
+  you can write down what TYPE of thing each value is (<code>: number</code>,
+  <code>: string</code>, <code>: boolean</code>), and the computer <b>checks your work
+  before the game even runs</b>. It's spell-check for code.</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/core/store.ts" data-line="${L.carBodyType}">src/core/store.ts:${L.carBodyType}</a></div>
+  <pre><span class="k">export type</span> CarBodyId = <span class="s">'coupe'</span> | <span class="s">'striker'</span> | <span class="s">'muscle'</span> | <span class="s">'wedge'</span></pre></div>
+  <p>That line says a car body can ONLY be one of those four words. Type
+  <code>'van'</code> anywhere and TypeScript underlines it in red before you've even saved.
+  You be the checker - would TypeScript allow these?</p>
+  <div class="quiz" data-answer="no">
+    <pre><span class="k">const</span> topSpeed: <span class="k">number</span> = <span class="s">'really fast'</span></pre>
+    <div class="btns"><button data-v="yes">&#10003; Allowed</button><button data-v="no">&#10007; Error</button></div>
+    <div class="verdict">&#10007; <b>Error.</b> <code>topSpeed</code> promises to be a number, and
+    <code>'really fast'</code> is a string (words in quotes). TypeScript catches it instantly -
+    in plain JavaScript this bug would hide until the speedo said "NaN".</div>
+  </div>
+  <div class="quiz" data-answer="no">
+    <pre><span class="k">const</span> body: CarBodyId = <span class="s">'van'</span></pre>
+    <div class="btns"><button data-v="yes">&#10003; Allowed</button><button data-v="no">&#10007; Error</button></div>
+    <div class="verdict">&#10007; <b>Error.</b> The type only allows the four real bodies. This is
+    why the garage can never show a car that doesn't exist - the mistake is impossible to write.</div>
+  </div>
+  <div class="quiz" data-answer="yes">
+    <pre><span class="k">let</span> laps: <span class="k">number</span> = <span class="n2">3</span>
+laps = laps + <span class="n2">1</span></pre>
+    <div class="btns"><button data-v="yes">&#10003; Allowed</button><button data-v="no">&#10007; Error</button></div>
+    <div class="verdict">&#10003; <b>Allowed.</b> number + number is a number - promise kept.
+    (<code>let</code> means it can change; <code>const</code> means it never will.)</div>
+  </div>
+  <div class="quiz" data-answer="no">
+    <pre><span class="k">function</span> boost(power: <span class="k">number</span>) { ... }
+boost()</pre>
+    <div class="btns"><button data-v="yes">&#10003; Allowed</button><button data-v="no">&#10007; Error</button></div>
+    <div class="verdict">&#10007; <b>Error.</b> The machine needs a <code>power</code> number fed in,
+    and it got nothing. TypeScript refuses to even start the game until you feed it.</div>
+  </div>
+  <div class="hintbox">This is why the game can be 15,000 lines and still work: hundreds of tiny
+  promises, all checked automatically, all the time. When you edit the real code in VS Code,
+  red underlines = TypeScript talking to you. It's on your side.</div>
+</section>
+
+<section id="ch9" data-title="Remembering things">
+  <div class="chip">CHAPTER 9</div>
+  <h2>Remembering things (state)</h2>
+  <p>Close the game, open it tomorrow - your best lap is still there. How? The browser has a
+  little notepad called <code>localStorage</code>: the game writes numbers into it, and reads
+  them back at startup.</p>
+  <div class="real"><div class="tag">REAL GAME CODE <a data-file="src/core/store.ts" data-line="${L.bestLap}">src/core/store.ts:${L.bestLap}</a></div>
+  <pre><span class="k">function</span> loadBestLap() { <span class="c">// reads 'sundown-run.bestLapMs' back off the notepad</span></pre></div>
+  <div class="play" data-pg="memory">
+    <div class="bar"><span class="t">PLAYGROUND · A HIGH SCORE THAT SURVIVES</span><button class="ghost reset">Wipe memory</button><button class="run">&#9654; +1 POINT</button></div>
+    <canvas height="90"></canvas>
+    <div class="msg"></div>
+  </div>
+  <div class="hintbox">Close this page right now. Reopen it. Scroll back here - your score
+  survived, because it isn't stored "in" the page at all. This is also why F12 &rarr;
+  <code>localStorage.clear()</code> resets your game records: it erases the notepad.</div>
+</section>
+
+<section id="ch10" data-title="MISSIONS (real code)">
+  <div class="chip">CHAPTER 10 · THE REAL THING</div>
+  <h2>Missions: now edit the actual game</h2>
+  <p>Everything above ran inside this page. These run in <b>your real game</b>. Have it open
+  in the browser while you edit - it updates the moment you save. If anything goes wrong:
+  <code>Sundown Run Update.bat</code>, fresh start, no harm done.</p>
+
+  <div class="mission"><div class="lvl">MISSION 1 · WARM-UP</div><h4>Rocket mode</h4>
+  <p>Open <a data-file="src/core/config.ts" data-line="${L.enginePower}">src/core/config.ts:${L.enginePower}</a>
+  and change <code>enginePower</code> to <code>4</code>. Save. Drive. Then find a number that's
+  fast but still <i>drivable</i> - that's called tuning, and it's a real job.</p></div>
+
+  <div class="mission"><div class="lvl">MISSION 2 · CHAPTER 2 SKILLS</div><h4>A paint job nobody else has</h4>
+  <p>At <a data-file="src/core/config.ts" data-line="${L.carColor}">src/core/config.ts:${L.carColor}</a>,
+  build your own hex colour by hand - pick your three numbers (0-255), convert to hex
+  (255 = FF), glue them together. Bonus: change the <code>ghostColor</code> too so your ghost
+  matches.</p></div>
+
+  <div class="mission"><div class="lvl">MISSION 3 · FORESTRY INDUSTRY</div><h4>The lumberjack update</h4>
+  <p>At <a data-file="src/core/config.ts" data-line="${L.treeSmash}">src/core/config.ts:${L.treeSmash}</a>,
+  set <code>treeSmashKmh: 1</code>. Every tree now loses. Drive through the forest between the
+  switchback legs and enjoy being a bulldozer. (Then put it back... or don't.)</p></div>
+
+  <div class="mission"><div class="lvl">MISSION 4 · CHAPTER 5 + 6 SKILLS</div><h4>Raise a mountain</h4>
+  <p>Open the world map, click an empty spot to copy its coordinates, then add ONE line to
+  <a data-file="src/core/terrain.ts" data-line="${L.playgrounds}">PLAYGROUNDS (terrain.ts:${L.playgrounds})</a>:</p>
+  <p><code>{ x: ?, z: ?, heading: 0.5, kind: 'kicker', reach: 135, what: 'my jump' },</code></p>
+  <p>Save - the hill EXISTS. Physics, shadows, everything. Try each kind: kicker, double,
+  bowl, table, ramp, bigair, cone. Yes, cone - you can grow your own volcano.</p></div>
+
+  <div class="mission"><div class="lvl">MISSION 5 · VOLCANO ENGINEER</div><h4>Plant a geyser</h4>
+  <p>Add a line to <a data-file="src/world/Geysers.tsx" data-line="${L.vents}">VENTS (Geysers.tsx:${L.vents})</a> -
+  a spot from the map plus a <code>phase</code> (seconds of head start on the 8s rhythm, so
+  yours erupts at a different moment than the others). Sneaky idea: put one right before a
+  banked corner.</p></div>
+
+  <div class="mission"><div class="lvl">MISSION 6 · FEEL ENGINEER</div><h4>Tune a corner like a pro</h4>
+  <p>At <a data-file="src/core/terrain.ts" data-line="${L.banks}">BANKS (terrain.ts:${L.banks})</a>,
+  change the hairpin's <code>slope: 0.2</code>. Drive it at 0.1, then 0.25. Feel the
+  difference? Also try <a data-file="src/core/config.ts" data-line="${L.stability}">stability
+  (config.ts:${L.stability})</a> at 0.7 vs 1.5 - same car, totally different animal.</p></div>
+
+  <div class="mission"><div class="lvl">MISSION 7 · BOSS LEVEL</div><h4>Make the geyser yours</h4>
+  <p>At <a data-file="src/world/Geysers.tsx" data-line="${L.geyserTrick}">Geysers.tsx:${L.geyserTrick}</a>
+  lives <code>emitTrick('GEYSER LAUNCH', 30, 1)</code> - the shout and the points. Rename it
+  (all caps looks best), make it worth more. Then a few lines up, find
+  <a data-file="src/world/Geysers.tsx" data-line="${L.launchVy}">LAUNCH_VY (line ${L.launchVy})</a>
+  and decide how hard your geysers throw. You are now literally a game developer.</p></div>
+
+  <div class="mission"><div class="lvl">FINAL BOSS</div><h4>More shards, bigger hunt</h4>
+  <p>In <a data-file="src/world/Delights.tsx" data-line="${L.roadShards}">Delights.tsx:${L.roadShards}</a>
+  the loop plants 6 road shards - make it 10. One catch: <code>COUNT</code> near the top of
+  the file must match the new total, or TypeScript's seatbelt will tell you off. Reading the
+  error and fixing it IS the mission. Welcome to programming.</p></div>
+
+  <p class="wisdom" style="margin-top:26px">After that? Open any file and read it - this game's
+  code is unusually full of comments explaining WHY. Break things on purpose and read the
+  errors. Keep the world map open and follow the links. And when you build something good,
+  it goes in the game for everyone - that's how this whole thing got made.</p>
+</section>
+
+</main>
+<script>
+// ---------- file:line links -> VS Code (or GitHub away from the repo) ----------
+const GH = 'https://github.com/NatMan3000/SundownRun/blob/main/';
+const fileRoot = location.protocol === 'file:'
+  ? decodeURIComponent(location.pathname).replace(/\\/[^/]*$/, '')
+  : null;
+document.querySelectorAll('a[data-file]').forEach(a => {
+  const f = a.dataset.file, l = a.dataset.line;
+  a.href = fileRoot ? 'vscode://file' + fileRoot + '/' + f + ':' + l : GH + f + '#L' + l;
+  a.title = 'opens VS Code at this exact line';
+});
+
+// ---------- nav + progress ticks ----------
+const nav = document.getElementById('nav');
+const DONE_KEY = 'sundown-learn.done';
+let done = {};
+try { done = JSON.parse(localStorage.getItem(DONE_KEY) || '{}'); } catch {}
+const sections = [...document.querySelectorAll('section')];
+sections.forEach((s, i) => {
+  const a = document.createElement('a');
+  a.href = '#' + s.id;
+  a.innerHTML = '<span class="n">' + (i === 0 ? '&#9733;' : i) + '</span>' + s.dataset.title +
+    '<span class="tick">&#10003;</span>';
+  if (done[s.id]) a.classList.add('done');
+  nav.appendChild(a);
+});
+function markDone(sec) {
+  const id = sec.closest('section').id;
+  if (done[id]) return;
+  done[id] = true;
+  try { localStorage.setItem(DONE_KEY, JSON.stringify(done)); } catch {}
+  const i = sections.findIndex(s => s.id === id);
+  nav.querySelectorAll('a')[i].classList.add('done');
+}
+
+// ---------- quiz ----------
+document.querySelectorAll('.quiz').forEach(q => {
+  q.querySelectorAll('.btns button').forEach(b => b.addEventListener('click', () => {
+    const v = q.querySelector('.verdict');
+    v.style.display = 'block';
+    const right = b.dataset.v === q.dataset.answer;
+    v.style.color = right ? 'var(--green)' : 'var(--cream)';
+    if (!right) v.insertAdjacentHTML('afterbegin', '<b>Not quite - </b>');
+    q.querySelectorAll('button').forEach(x => x.disabled = true);
+    markDone(q);
+  }));
+});
+
+// ---------- playground engine ----------
+function friendly(e) {
+  let m = String(e && e.message || e);
+  if (/is not defined/.test(m)) m += ' - the computer has never heard of that name. Typo?';
+  else if (/Unexpected token|Unexpected end/.test(m)) m += ' - usually a missing bracket or quote.';
+  return 'The computer got confused: ' + m;
+}
+const PG = {};
+document.querySelectorAll('.play').forEach(p => {
+  const kind = p.dataset.pg;
+  const ta = p.querySelector('textarea');
+  const cv = p.querySelector('canvas');
+  const msg = p.querySelector('.msg');
+  const ctx = cv.getContext('2d');
+  const initial = ta ? ta.value : '';
+  function setMsg(t, cls) { msg.textContent = t || ''; msg.className = 'msg ' + (cls || ''); }
+  function fit() { cv.width = cv.clientWidth * devicePixelRatio; cv.height = cv.getAttribute('height') * devicePixelRatio; ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); }
+  const api = { p, ta, cv, ctx, msg, setMsg, fit, w: () => cv.clientWidth, h: () => +cv.getAttribute('height') };
+  p.querySelector('.run').addEventListener('click', () => { markDone(p); PG[kind].run(api); });
+  const rst = p.querySelector('.reset');
+  if (rst) rst.addEventListener('click', () => { if (ta) ta.value = initial; PG[kind].reset ? PG[kind].reset(api) : PG[kind].run(api); setMsg(''); });
+  if (ta) ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('  ', s, ta.selectionEnd, 'end'); }
+  });
+  requestAnimationFrame(() => { fit(); PG[kind] && PG[kind].init && PG[kind].init(api); });
+});
+
+function evalVars(code, names) {
+  const fn = new Function(code + '\\nreturn [' + names.join(',') + '];');
+  return fn();
+}
+function drawCar(ctx, x, y, colour, s) {
+  s = s || 1;
+  ctx.fillStyle = colour; ctx.fillRect(x, y - 14 * s, 44 * s, 10 * s);
+  ctx.fillRect(x + 10 * s, y - 22 * s, 22 * s, 9 * s);
+  ctx.fillStyle = '#241B14';
+  ctx.beginPath(); ctx.arc(x + 10 * s, y - 4 * s, 5 * s, 0, 7); ctx.arc(x + 34 * s, y - 4 * s, 5 * s, 0, 7); ctx.fill();
+}
+
+// CH1 drag race
+PG.drag = {
+  anim: 0,
+  run(api) {
+    cancelAnimationFrame(this.anim);
+    let power, drag;
+    try { [power, drag] = evalVars(api.ta.value, ['power', 'drag']); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+    if (!isFinite(power) || !isFinite(drag)) return api.setMsg('power and drag both need to be numbers', 'err');
+    const W = api.w(), H = api.h(), finish = W - 60;
+    let x = 10, v = 0, t = 0, last = performance.now();
+    api.setMsg('');
+    const tick = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      v += (power * 60 - drag * v * v) * dt;   // the engine vs the air
+      if (v < 0) v = 0;
+      x += v * dt; t += dt;
+      api.ctx.clearRect(0, 0, W, H);
+      api.ctx.fillStyle = 'rgba(242,232,213,.25)';
+      for (let i = 0; i < 8; i++) api.ctx.fillRect((i / 8) * W, H - 26, 26, 3);
+      api.ctx.fillStyle = '#F2E8D5'; api.ctx.fillRect(finish, H - 90, 4, 70);
+      drawCar(api.ctx, Math.min(x, finish), H - 30, '#1FA8C9');
+      api.ctx.fillStyle = '#FFE7B0'; api.ctx.font = '13px ui-monospace';
+      api.ctx.fillText(t.toFixed(2) + 's   ' + Math.round(v * 3.6 / 4) + ' km/h', 12, 20);
+      if (x < finish && t < 30) this.anim = requestAnimationFrame(tick);
+      else api.setMsg(x >= finish ? 'Finished in ' + t.toFixed(2) + 's - now make it faster.' : 'Still going after 30s... maybe a little more power?', 'ok');
+    };
+    this.anim = requestAnimationFrame(tick);
+  },
+  init(api) { this.run(api); },
+};
+
+// CH2 paint
+PG.paint = {
+  run(api) {
+    let paint;
+    const rgb = (r, g, b) => 'rgb(' + r + ',' + g + ',' + b + ')';
+    try { paint = new Function('rgb', api.ta.value + '\\nreturn paint;')(rgb); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+    const W = api.w(), H = api.h();
+    api.ctx.clearRect(0, 0, W, H);
+    api.ctx.fillStyle = 'rgba(0,0,0,.25)'; api.ctx.fillRect(0, H - 24, W, 24);
+    drawCar(api.ctx, W / 2 - 66, H - 30, paint, 3);
+    api.setMsg('painted ' + paint, 'ok');
+  },
+  init(api) { this.run(api); },
+};
+
+// CH3 tree
+PG.tree = {
+  run(api) {
+    const W = api.w(), H = api.h();
+    let outcome = null;
+    const result = (text, kind) => { outcome = { text, kind }; };
+    try { new Function('result', api.ta.value)(result); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+    api.ctx.clearRect(0, 0, W, H);
+    const smash = outcome && outcome.kind === 'smash';
+    drawCar(api.ctx, W / 2 - 90, H - 30, '#1FA8C9', 1.4);
+    api.ctx.fillStyle = '#6B4A2E';
+    if (smash) { api.ctx.save(); api.ctx.translate(W / 2 + 40, H - 40); api.ctx.rotate(1.1); api.ctx.fillRect(-5, -40, 10, 44); api.ctx.restore(); }
+    else api.ctx.fillRect(W / 2 + 36, H - 66, 10, 40);
+    api.ctx.fillStyle = '#4E7A3A';
+    api.ctx.beginPath();
+    if (smash) api.ctx.arc(W / 2 + 90, H - 52, 18, 0, 7); else api.ctx.arc(W / 2 + 41, H - 74, 20, 0, 7);
+    api.ctx.fill();
+    if (outcome) api.setMsg(outcome.text, smash ? 'ok' : 'err');
+    else api.setMsg("your code never called result(...) - did the if eat both branches?", 'err');
+  },
+  init(api) { this.run(api); },
+};
+
+// CH4 terrain
+PG.terrain = {
+  run(api) {
+    let height;
+    try { height = new Function(api.ta.value + '\\nreturn height;')(); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+    if (typeof height !== 'function') return api.setMsg('keep a function called height(x) in there - the page draws its answers', 'err');
+    const W = api.w(), H = api.h();
+    api.ctx.clearRect(0, 0, W, H);
+    api.ctx.beginPath();
+    let bad = false;
+    for (let x = 0; x <= W; x += 2) {
+      let y;
+      try { y = height(x); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+      if (!isFinite(y)) { bad = true; y = 0; }
+      const py = H - 34 - Math.max(-20, Math.min(H - 50, y));
+      x === 0 ? api.ctx.moveTo(x, py) : api.ctx.lineTo(x, py);
+    }
+    api.ctx.lineTo(W, H); api.ctx.lineTo(0, H); api.ctx.closePath();
+    api.ctx.fillStyle = '#7A8B4F'; api.ctx.fill();
+    const cy = H - 34 - Math.max(-20, Math.min(H - 50, height(140)));
+    drawCar(api.ctx, 118, cy - 2, '#1FA8C9');
+    api.setMsg(bad ? 'some answers were not numbers - watch for divide-by-zero' : 'world built. ' + (height(0) === height(700) ? '' : 'nice terrain.'), bad ? 'err' : 'ok');
+  },
+  init(api) { this.run(api); },
+};
+
+// CH5 bump
+PG.bump = {
+  run(api) {
+    let hill;
+    try { hill = new Function(api.ta.value + '\\nreturn hill;')(); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+    if (!hill || typeof hill !== 'object') return api.setMsg('keep an object called hill in there', 'err');
+    const W = api.w(), H = api.h();
+    api.ctx.clearRect(0, 0, W, H);
+    api.ctx.beginPath();
+    for (let x = 0; x <= W; x += 2) {
+      const d = (x - hill.x) / (hill.width || 1);
+      const y = (hill.height || 0) * Math.exp(-d * d);
+      const py = H - 30 - y;
+      x === 0 ? api.ctx.moveTo(x, py) : api.ctx.lineTo(x, py);
+    }
+    api.ctx.lineTo(W, H); api.ctx.lineTo(0, H); api.ctx.closePath();
+    api.ctx.fillStyle = '#7A8B4F'; api.ctx.fill();
+    api.setMsg('hill.x = ' + hill.x + ', hill.height = ' + hill.height + ' - the dots pull values out', 'ok');
+  },
+  init(api) { this.run(api); },
+};
+
+// CH6 forest
+PG.forest = {
+  run(api) {
+    const W = api.w(), H = api.h();
+    api.ctx.clearRect(0, 0, W, H);
+    api.ctx.fillStyle = '#7A8B4F'; api.ctx.fillRect(0, H - 150, W, 150);
+    let seed = 12345;
+    const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    let count = 0;
+    const plant = (x, y) => {
+      if (count++ > 5000) throw new Error('5000 trees is enough trees');
+      const gy = H - 140 + (y % 130);
+      api.ctx.fillStyle = '#6B4A2E'; api.ctx.fillRect(x - 1.5, gy - 8, 3, 8);
+      api.ctx.fillStyle = count % 7 ? '#4E7A3A' : '#B8622E';
+      api.ctx.beginPath(); api.ctx.moveTo(x, gy - 22); api.ctx.lineTo(x - 7, gy - 6); api.ctx.lineTo(x + 7, gy - 6); api.ctx.fill();
+    };
+    try { new Function('plant', 'random', api.ta.value)(plant, random); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+    api.setMsg(count + ' trees planted by ' + api.ta.value.split('\\n').length + ' lines of code. That is the whole trick.', 'ok');
+  },
+  init(api) { this.run(api); },
+};
+
+// CH7 game loop
+PG.loop = {
+  anim: 0,
+  state: { y: 0, vy: 0, scroll: 0, params: { gravity: 60, jumpPower: 45, speed: 120, bounce: 0.4 } },
+  run(api) {
+    let g, j, s, b;
+    try { [g, j, s, b] = evalVars(api.ta.value, ['gravity', 'jumpPower', 'speed', 'bounce']); } catch (e) { return api.setMsg(friendly(e), 'err'); }
+    this.state.params = { gravity: g, jumpPower: j, speed: s, bounce: b };
+    api.setMsg('running - click the canvas or JUMP', 'ok');
+    if (!this.anim) this.start(api);
+  },
+  start(api) {
+    const W = () => api.w(), H = api.h();
+    const st = this.state;
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const p = st.params;
+      st.vy -= p.gravity * dt;          // gravity: nudge fall-speed down
+      st.y += st.vy * dt;               // speed: nudge position by fall-speed
+      if (st.y <= 0) { st.y = 0; if (Math.abs(st.vy) > 2) st.vy = -st.vy * p.bounce; else st.vy = 0; }
+      st.scroll += p.speed * dt;
+      const ctx = api.ctx, w = W();
+      ctx.clearRect(0, 0, w, H);
+      ctx.fillStyle = 'rgba(242,232,213,.3)';
+      for (let i = -1; i < w / 60 + 1; i++) ctx.fillRect(((i * 60 - st.scroll % 60)), H - 24, 30, 3);
+      drawCar(ctx, 80, H - 28 - st.y, '#1FA8C9', 1.2);
+      ctx.fillStyle = '#FFE7B0'; ctx.font = '12px ui-monospace';
+      ctx.fillText('height ' + st.y.toFixed(0) + '   fall-speed ' + st.vy.toFixed(0), 12, 18);
+      this.anim = requestAnimationFrame(tick);
+    };
+    this.anim = requestAnimationFrame(tick);
+  },
+  jump() { const st = this.state; if (st.y < 1) st.vy = st.params.jumpPower; },
+  init(api) {
+    this.run(api);
+    api.cv.addEventListener('pointerdown', () => this.jump());
+    api.cv.addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); this.jump(); } });
+    api.p.querySelector('.jump').addEventListener('click', () => this.jump());
+  },
+};
+
+// CH9 memory
+PG.memory = {
+  KEY: 'sundown-learn.score',
+  draw(api) {
+    const W = api.w(), H = api.h();
+    const score = parseInt(localStorage.getItem(this.KEY) || '0', 10);
+    api.ctx.clearRect(0, 0, W, H);
+    api.ctx.fillStyle = '#FFE7B0'; api.ctx.font = '700 34px ui-monospace';
+    api.ctx.fillText(String(score), W / 2 - 20, H / 2 + 12);
+    api.ctx.font = '11px ui-monospace'; api.ctx.fillStyle = 'rgba(242,232,213,.6)';
+    api.ctx.fillText('stored on the browser notepad, not in the page', W / 2 - 140, H - 12);
+  },
+  run(api) {
+    const score = parseInt(localStorage.getItem(this.KEY) || '0', 10) + 1;
+    try { localStorage.setItem(this.KEY, String(score)); } catch {}
+    this.draw(api);
+    api.setMsg("localStorage.setItem('score', " + score + ') - written. Reload the page: still there.', 'ok');
+  },
+  reset(api) { localStorage.removeItem(this.KEY); this.draw(api); api.setMsg('notepad wiped.', 'ok'); },
+  init(api) { this.draw(api); },
+};
+</script>
+</body>
+</html>
+`
+
+await Bun.write(new URL('../Learn To Code.html', import.meta.url), html)
+console.log(`Learn To Code.html written - ${(html.length / 1024).toFixed(0)} KB`)

@@ -9,6 +9,7 @@
     "mp": "bun server/mp.ts",
     "relay": "bun server/relay.ts",
     "map": "bun scripts/world-map.ts",
+    "learn": "bun scripts/learn-to-code.ts",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview --port 5199 --strictPort"
