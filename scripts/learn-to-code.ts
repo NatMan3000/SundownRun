@@ -45,7 +45,7 @@ const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Sundown Run - Learn To Code</title>
+<title>Josh Learns Code - Sundown Run</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root { --cream:#F2E8D5; --amber:#FFB35C; --gold:#FFE7B0; --bg:#1A1410; --panel:#241B14;
@@ -114,18 +114,19 @@ const html = `<!doctype html>
 </head>
 <body>
 <nav id="nav">
-  <h1>LEARN TO CODE</h1>
-  <div class="sub">with Sundown Run · your game is the textbook</div>
+  <h1>JOSH LEARNS CODE</h1>
+  <div class="sub">Sundown Run is the textbook · you are the developer</div>
 </nav>
 <main id="main">
 
 <section id="ch0" data-title="The big secret">
   <div class="chip">START HERE</div>
   <h2>The big secret: the game is just text</h2>
-  <p>Everything in Sundown Run - the mountains, the geysers, the way the car drifts -
+  <p>Josh - Sundown Run was built <b>for</b> you. This page is where it starts being built
+  <b>by</b> you. Everything in the game - the mountains, the geysers, the way the car drifts -
   is <b>text in files</b>. There is no magic. The browser reads the text, follows it like
   a recipe, and the world exists. Change the text, and the world changes.</p>
-  <p>Here's the thing: <b>you have already coded</b>. When you changed <code>carColor</code>
+  <p>Here's the thing: <b>you have already coded, Josh</b>. When you changed <code>carColor</code>
   and the car turned a different colour - that was programming. Everything on this page
   is just <i>more of that</i>.</p>
   <p>Two rules for this whole page:</p>
@@ -134,7 +135,7 @@ const html = `<!doctype html>
   <b>2. You cannot really break the game either.</b> If your code experiments ever go properly
   wrong, <code>Sundown Run Update.bat</code> is the do-over button - it puts everything back.</p>
   <p>The amber <b>file:line</b> pills everywhere open VS Code at that exact line of the
-  real game. That's not example code - it's THE code your game is running right now.</p>
+  real game. That's not example code - it's THE code your game is running right now. Righto - chapter 1.</p>
 </section>
 
 <section id="ch1" data-title="Numbers are knobs">
@@ -370,7 +371,7 @@ boost()</pre>
 
 <section id="ch10" data-title="MISSIONS (real code)">
   <div class="chip">CHAPTER 10 · THE REAL THING</div>
-  <h2>Missions: now edit the actual game</h2>
+  <h2>Missions: now edit the actual game, Josh</h2>
   <p>Everything above ran inside this page. These run in <b>your real game</b>. Have it open
   in the browser while you edit - it updates the moment you save. If anything goes wrong:
   <code>Sundown Run Update.bat</code>, fresh start, no harm done.</p>
@@ -415,18 +416,19 @@ boost()</pre>
   lives <code>emitTrick('GEYSER LAUNCH', 30, 1)</code> - the shout and the points. Rename it
   (all caps looks best), make it worth more. Then a few lines up, find
   <a data-file="src/world/Geysers.tsx" data-line="${L.launchVy}">LAUNCH_VY (line ${L.launchVy})</a>
-  and decide how hard your geysers throw. You are now literally a game developer.</p></div>
+  and decide how hard your geysers throw. You are now literally a game developer, Josh. Nobody can take that back.</p></div>
 
   <div class="mission"><div class="lvl">FINAL BOSS</div><h4>More shards, bigger hunt</h4>
   <p>In <a data-file="src/world/Delights.tsx" data-line="${L.roadShards}">Delights.tsx:${L.roadShards}</a>
   the loop plants 6 road shards - make it 10. One catch: <code>COUNT</code> near the top of
   the file must match the new total, or TypeScript's seatbelt will tell you off. Reading the
-  error and fixing it IS the mission. Welcome to programming.</p></div>
+  error and fixing it IS the mission. Welcome to programming, Josh.</p></div>
 
-  <p class="wisdom" style="margin-top:26px">After that? Open any file and read it - this game's
+  <p class="wisdom" style="margin-top:26px">After that, Josh? Open any file and read it - this game's
   code is unusually full of comments explaining WHY. Break things on purpose and read the
   errors. Keep the world map open and follow the links. And when you build something good,
-  it goes in the game for everyone - that's how this whole thing got made.</p>
+  it goes in the game for everyone - your dad and Kai will help you ship it. That's how this
+  whole thing got made, and now you're one of the people making it.</p>
 </section>
 
 </main>
