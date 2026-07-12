@@ -18,6 +18,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Bun (install/dev/build), TypeScript 7 (`tsc -b`)
 - Dev server: **port 5199, strictPort** - `bun run dev` -> http://localhost:5199
 
+## Running it
+
+| What | Command / file | Notes |
+|------|----------------|-------|
+| Play (single player) | `bun run dev` -> http://localhost:5199 | `bun run start` also opens the browser |
+| **Host multiplayer** | `bun run mp` | Starts the WS relay (port 5200) + vite `--host`, prints join links. Only the HOST runs this - everyone else just opens the printed `http://<host-ip>:5199/?mp=1&name=...` link in a browser (nothing installed on their machine) |
+| Relay alone | `bun run relay` | Rarely needed - `mp` includes it |
+| Build / typecheck | `bun run build` / `bun run typecheck` | `tsc -b` + vite build; the ship gate |
+| Windows: play | `Sundown Run.bat` | Finds bun OR node/npm, installs deps on first run |
+| Windows: host multiplayer | `Multiplayer.bat` | Requires Bun (offers to install it, Y/N); adds the inbound firewall rule for 5199-5200 via a one-time admin YES - without that rule Windows silently blocks other computers. Never type `bun/npm run mp` into PowerShell on these machines - execution policy blocks the `.ps1` shims |
+| Windows: update | `Get Updates.bat` | `git fetch` + `reset --hard origin/main` + `git clean -fd` - nukes local changes by design (Josh's do-over button) |
+
+Multiplayer activation is URL-driven (`?mp=1&name=JOSH&color=red`) because both machines share the repo's config.ts through the host's dev server - the URL is the only per-machine channel. Firewall debugging: friends failing to connect is almost always the HOST's inbound firewall on 5199/5200 (Windows: the bat's rule; macOS: allow bun in System Settings -> Network -> Firewall).
+
 ## Architecture
 
 - **`CONSTITUTION.md`** - the binding standard. Art direction ("Golden Hour" - warm low sun, long shadows, atmosphere-everywhere), the 60fps performance budget, and gameplay feel rules. All disputes are settled against this document, never against taste-in-the-moment. Amend deliberately, never drive-by.
