@@ -243,8 +243,8 @@ export const ASSIST = {
 
   /** Air control - enough authority to style a jump (tricks are the game now),
    *  still short of flying. Turned up from 900/700 on Nathan's playtest call. */
-  airPitch: 5000,
-  airYaw: 5000,
+  airPitch: 3500,
+  airYaw: 4000,
   airAngularDamp: 0.9,
   /** Extra lateral damping below walking pace so the car doesn't creep sideways. */
   lowSpeedLateral: 0.6,
