@@ -30,10 +30,12 @@ const vite = Bun.spawn(['bun', 'run', 'dev', '--host'], {
 })
 
 const ip = lanIPv4()
-const amber = '\x1b[33m'
-const bold = '\x1b[1m'
-const dim = '\x1b[2m'
-const reset = '\x1b[0m'
+// Classic Windows consoles print ANSI codes as garbage - colour only where safe.
+const tty = process.platform !== 'win32' || !!process.env.WT_SESSION
+const amber = tty ? '\x1b[33m' : ''
+const bold = tty ? '\x1b[1m' : ''
+const dim = tty ? '\x1b[2m' : ''
+const reset = tty ? '\x1b[0m' : ''
 
 setTimeout(() => {
   console.log(`
@@ -44,7 +46,10 @@ ${bold}${amber}  SUNDOWN RUN - MULTIPLAYER${reset}
 
   ${dim}Change name=... to whatever you like (that's your name tag).
   Add &color=red (or any colour) so the cars don't match.
-  Everyone who opens a link joins the same world. Ctrl+C stops it all.${reset}
+  Everyone who opens a link joins the same world. Ctrl+C stops it all.
+
+  Friends can't connect? This computer's firewall must allow ports
+  5199-5200 in. On Windows, run Multiplayer.bat - it adds the rule.${reset}
 `)
 }, 900)
 

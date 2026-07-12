@@ -91,15 +91,18 @@ automatically. Touch the keyboard to switch back.
 
 ## Multiplayer - race a mate on two computers
 
-One command on ONE computer (the "host" - both computers need to be on the
-same wifi):
+ONE computer is the "host" (everyone needs to be on the same wifi):
 
-```bash
-bun run mp
-```
+- **Windows:** double-click **`Multiplayer.bat`**. First time it asks for an
+  admin YES - that adds the Windows Firewall rule that lets friends connect
+  (without it Windows silently blocks them). Don't type `npm run mp` or
+  `bun run mp` into PowerShell - PowerShell blocks script shims with a
+  "running scripts is disabled" error; the bat file is the way.
+- **Mac / Linux:** `bun run mp` in a terminal. If the Mac firewall is on,
+  click "Allow" when it asks about incoming connections for bun.
 
-It prints two links. Open the first on the host, the second on the other
-computer - that one needs NOTHING installed, the game streams straight from
+It prints two links. Open the first on the host, the second on every other
+computer - those need NOTHING installed, the game streams straight from
 the host. Change `name=` in the link to your own name (that's your name tag)
 and add `&color=red` (or any colour) so the cars look different.
 
@@ -114,9 +117,6 @@ starts), and the first one back around the track wins. Cutting across the
 grass doesn't count, same as lap records. Every race also deals a fresh
 layout of hay bales, crates and barrels - and when your mate smashes one,
 you see it burst on your screen too.
-
-Windows host note: run the command from the folder in a terminal
-(`bun run mp`), or make a `Multiplayer.bat` with that line in it.
 
 ## Josh: this bit is for you
 
