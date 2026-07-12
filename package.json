@@ -8,6 +8,7 @@
     "start": "vite --port 5199 --strictPort --open",
     "mp": "bun server/mp.ts",
     "relay": "bun server/relay.ts",
+    "map": "bun scripts/world-map.ts",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview --port 5199 --strictPort"

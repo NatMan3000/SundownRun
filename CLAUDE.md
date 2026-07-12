@@ -29,6 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Windows: play | `Sundown Run.bat` | Finds bun OR node/npm, installs deps on first run |
 | Windows: host multiplayer | `Multiplayer.bat` | Requires Bun (offers to install it, Y/N); adds the inbound firewall rule for 5199-5200 via a one-time admin YES - without that rule Windows silently blocks other computers. Never type `bun/npm run mp` into PowerShell on these machines - execution policy blocks the `.ps1` shims |
 | Windows: update | `Get Updates.bat` | `git fetch` + `reset --hard origin/main` + `git clean -fd` - nukes local changes by design (Josh's do-over button) |
+| World map | `bun run map` -> `World Map.html` | Interactive top-down map generated FROM the game code (terrain exports: CIRCUIT/JUMPS/BANKS/PLAYGROUNDS + heightfield render); clickable markers explain each feature and point at the code that makes it. Regenerate + commit after any world change. Shard positions are hand-mirrored from Delights.tsx buildShards() - update both. |
 
 Multiplayer activation is URL-driven (`?mp=1&name=JOSH&color=red`) because both machines share the repo's config.ts through the host's dev server - the URL is the only per-machine channel. Firewall debugging: friends failing to connect is almost always the HOST's inbound firewall on 5199/5200 (Windows: the bat's rule; macOS: allow bun in System Settings -> Network -> Firewall).
 

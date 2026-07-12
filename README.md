@@ -124,6 +124,12 @@ Open `src/core/config.ts`. Every number in there is a knob - car colour, engine
 power, grip, camera, time of day. Change one, save, and the game updates in the
 browser instantly. Start with `carColor`.
 
+**Explore the world from above:** double-click **`World Map.html`**. It shows
+the whole 2 km world - every jump, banked corner, playground toy and sun shard
+(even the hidden ones... spoilers) - and clicking anything tells you which bit
+of code makes it. The map is generated FROM the game code (`bun run map`
+rebuilds it), so it is never out of date.
+
 **Reset your records:** press F12 in the game, click Console, type
 `localStorage.clear()` and press Enter, then refresh. High score, best lap,
 best combo and the ghost all start fresh (your car choice resets too).

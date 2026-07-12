@@ -634,7 +634,7 @@ function airRunWear(x: number, z: number): number {
 // terrain keeps a ridge between them. Index 0 is the start/finish line: it sits a
 // little way onto the straight, just past the exit of the last corner, so the car
 // spawns pointing down the straight rather than mid-apex.
-const CIRCUIT: ReadonlyArray<readonly [number, number]> = [
+export const CIRCUIT: ReadonlyArray<readonly [number, number]> = [
   [-296, -409], //  0  onto the long south straight, heading +x (the line itself moved east - see START_LINE_T)
   [-190, -412],
   [-60, -415],
@@ -752,7 +752,7 @@ const DENSE = 4096 //    samples used for nearest-point queries (~0.95 m apart)
 // A gaussian bump of amplitude A and width sigma has vertical radius R = sigma^2 / A
 // at its peak; the car goes airborne above v = sqrt(g * R). A trailing dip gives the
 // "drop-away" so it lands on a downslope instead of slamming a flat.
-const JUMPS = [
+export const JUMPS = [
   { anchor: [70, -412] as const, rise: 5.6, sigma: 30, drop: 3.8, dropSigma: 42, dropAt: 95 },
   { anchor: [150, 472] as const, rise: 3.4, sigma: 22, drop: 2.4, dropSigma: 30, dropAt: 64 },
 ]
@@ -937,7 +937,7 @@ const RF = new Float32Array(DENSE) // width flare at this sample
 // around the anchor, smoothstepped to zero over rampM on each side. The turn
 // direction is read from the road itself (tangent cross around the anchor),
 // so re-authoring the circuit cannot silently bank the wrong way.
-const BANKS = [
+export const BANKS = [
   { anchor: [8, 168] as const, holdM: 110, rampM: 40, slope: 0.2 }, //     the hairpin
   { anchor: [421, 368] as const, holdM: 120, rampM: 45, slope: 0.18 }, //  the sweep after the hairpin, onto the north straight
   { anchor: [-390, -350] as const, holdM: 150, rampM: 50, slope: 0.19 }, // last corner onto the south straight
