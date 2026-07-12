@@ -7,7 +7,7 @@
 //  stored trace (vehicle/ghost.ts), time-synced to the player's
 //  live lap clock. When the player crosses the start line the
 //  ghost sets off from the same spot; interpolation between the
-//  20Hz samples keeps it gliding rather than stepping.
+//  recorded samples (60Hz - see ghost.ts REC_HZ) keeps it gliding.
 //
 //  It reuses the EXACT car geometry (getBody / WHEEL_GEOM from
 //  CarBody) so the ghost is unmistakably "the same car" - just

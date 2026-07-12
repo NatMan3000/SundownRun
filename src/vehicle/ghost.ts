@@ -5,12 +5,12 @@
 //
 //  RECORD (this file, the physics side)
 //    While a lap is being timed, the physics step feeds the car's
-//    pose in here at a FIXED 20Hz (every third 60Hz step). The
-//    samples land in preallocated Float32Arrays - zero allocation
-//    per step, ever. When a VALID lap completes AND beats the best,
-//    the buffer is committed: copied into a compact trace and
-//    persisted to localStorage. A void / dirty / reset lap is
-//    discarded and the buffer reused.
+//    pose in here at the FULL 60Hz step rate. The samples land in
+//    preallocated Float32Arrays - zero allocation per step, ever.
+//    When a VALID lap completes AND beats the best, the buffer is
+//    committed: copied into a compact trace and persisted to
+//    localStorage. A void / dirty / reset lap is discarded and the
+//    buffer reused.
 //
 //  REPLAY (GhostCar.tsx, the render side)
 //    Reads `ghostTrace` and, time-synced to the player's live lap
@@ -21,13 +21,16 @@
 //  one place that already knows a lap has begun, gone dirty, been
 //  voided, completed, or been teleported away. See the calls there.
 //
-//  WHY 20Hz, and why deterministic time. A sample's timestamp is
-//  simply index / REC_HZ - the recorder never stores a clock. The
-//  physics step is a fixed 1/60s, so decimating it by three is an
-//  exact 20Hz grid. On replay the player's wall-clock lap time picks
-//  the bracketing samples; the tiny step-vs-wall drift over a lap is
-//  invisible on a translucent ghost. 20Hz interpolated is smooth for
-//  a spectral car even at top speed (~2.6m between samples, lerped).
+//  WHY 60Hz, and why deterministic time. A sample's timestamp is
+//  simply index / REC_HZ - the recorder never stores a clock. On
+//  replay the player's wall-clock lap time picks the bracketing
+//  samples; the tiny step-vs-wall drift over a lap is invisible on
+//  a translucent ghost. It recorded at 20Hz originally - fine for
+//  POSITION (2.6 m between samples lerps clean), but once tricks
+//  landed the ghost could be mid-spin at 450 deg/s, and 22 deg
+//  between samples slerps like a robot. 60Hz is the physics rate:
+//  nothing left to alias. Cost is ~3x storage - a 3:20 lap is
+//  ~450 KB of localStorage, well inside the budget.
 // ============================================================
 
 import * as THREE from 'three'
@@ -36,11 +39,11 @@ import type { CarBodyId } from '../core/store'
 import { CAR_BODIES } from '../core/store'
 
 /** Samples per second. Physics is 60Hz, so this must divide 60 cleanly. */
-export const REC_HZ = 20
-const REC_EVERY = 60 / REC_HZ // record every Nth physics step
+export const REC_HZ = 60
+const REC_EVERY = 60 / REC_HZ // record every Nth physics step (60Hz -> every step)
 /** A lap longer than this simply is not going to be a best - stop recording it. */
 const MAX_SECONDS = 300
-const MAX_SAMPLES = REC_HZ * MAX_SECONDS // 6000 - buffers sized once, never grown
+const MAX_SAMPLES = REC_HZ * MAX_SECONDS // 18000 - buffers sized once, never grown (~0.5 MB)
 
 const STORAGE_KEY = 'sundown-run.ghostLap'
 // Bumped to 2 when the start/finish line moved to START_LINE_T: a trace recorded
@@ -133,7 +136,8 @@ function setGhostTrace(trace: GhostTrace | null): void {
 // ---------- persistence ----------
 // Stored compact: positions as centimetre integers, quaternion components as
 // milli-unit integers. Integers keep the JSON free of decimal points, so a
-// typical ~45s lap (900 samples) is a few tens of KB - comfortably small.
+// typical ~3:20 lap (12000 samples at 60Hz) is ~450 KB - well inside the
+// ~5 MB localStorage budget, and it only ever holds ONE trace.
 
 function isCarBody(v: unknown): v is CarBodyId {
   return typeof v === 'string' && (CAR_BODIES as readonly string[]).includes(v)
@@ -207,7 +211,7 @@ class GhostRecorder {
 
   /**
    * Fed the raw physics pose every 60Hz step. Records every REC_EVERY-th step.
-   * Hot path: a boolean check when idle, and a handful of array writes at 20Hz.
+   * Hot path: a boolean check when idle, and a handful of array writes per step.
    * No allocation.
    */
   sample(p: THREE.Vector3, q: THREE.Quaternion): void {
