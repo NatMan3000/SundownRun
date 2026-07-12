@@ -72,3 +72,6 @@ A long live playtesting-and-iteration session with Josh's dad (Nathan) driving t
 
 - `sessions/2026-07-11-ghost-lap-implementation-subagent.md` - the delegated ghost-lap build, verified and committed within this session as `c192909`.
 - `sessions/2026-07-09-sundown-run-full-build.md` and worker traces - source pattern for the frozen-contract parallel-worker approach reused here.
+- `sessions/2026-07-11-playground-worker-world-terrain-rocks-arches.md` - WORLD worker trace (start line, bouncy rocks, ridge arches + jumps).
+- `sessions/2026-07-11-playground-worker-drive-tricks-lap-offset.md` - DRIVE worker trace (trick detection, `lapTracker` offset).
+- `sessions/2026-07-11-playground-worker-avui-audio-fix-trick-ui.md` - AVUI worker trace (controller-restart audio fix, trick UI, airborne rev-up, wind removal).
