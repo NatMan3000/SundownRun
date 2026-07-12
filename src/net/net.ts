@@ -18,6 +18,9 @@
 // ============================================================
 
 import * as THREE from 'three'
+import { CONFIG } from '../core/config'
+import { propsSignal } from '../core/propsSignal'
+import { raceSignal } from '../vehicle/vehicleSignals'
 import { useNetStore } from './netStore'
 import type { PeerInfo } from './netStore'
 import {
@@ -77,6 +80,14 @@ export function playerName(): string {
  *  carColor is identical on both machines, so a URL knob keeps the cars apart. */
 export function playerColor(defaultColor: string): string {
   return params.get('color') ?? defaultColor
+}
+
+// The override applies to OUR OWN car too (module scope: runs before the first
+// render reads CONFIG.carColor). Without this, ?color=red would paint you red
+// on your mate's screen while you still see config blue - pure gaslighting.
+if (mpEnabled()) {
+  const c = params.get('color')
+  if (c) (CONFIG as { carColor: string }).carColor = c
 }
 
 // ---------- pose ring buffer (per peer) ----------
@@ -162,6 +173,8 @@ let wantOpen = false
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 let helloMsg: HelloMsg | null = null
 let statsMsg: ClientMsg | null = null
+/** Our relay-assigned id (from the welcome message). Decides the start-grid slot. */
+let myId = 0
 
 const _sendBuf = new Float32Array(POSE_FLOATS)
 const _taggedView = new Float32Array(POSE_FLOATS) // scratch for incoming poses
@@ -178,6 +191,7 @@ export function disconnect(): void {
   ws?.close()
   ws = null
   peerPoses.clear()
+  raceSignal.active = false
   useNetStore.getState().clearPeers()
   useNetStore.getState().setStatus('off')
 }
@@ -251,6 +265,7 @@ function handleMsg(msg: RelayMsg): void {
   const store = useNetStore.getState()
   switch (msg.t) {
     case 'welcome':
+      myId = msg.id
       // Peers already in the room - no join fanfare for people who were here first.
       for (const p of msg.peers) {
         if (p.hello) store.upsertPeer(peerFromHello(p.id, p.hello), false)
@@ -273,7 +288,70 @@ function handleMsg(msg: RelayMsg): void {
         trickScore: msg.trickScore,
       })
       break
+    case 'race':
+      startRaceCountdown(msg.raceId, msg.round)
+      break
+    case 'raceWin': {
+      if (!raceSignal.active || msg.raceId !== raceSignal.raceId) break
+      raceSignal.active = false
+      const winner = store.peers[msg.from]
+      store.setRaceResult(winner ? winner.name : 'THEY', msg.ms)
+      break
+    }
+    case 'prop':
+      // Only apply bursts from the same deal of the props - a message that
+      // straddles a race start refers to a layout that no longer exists.
+      if (msg.round === propsSignal.round) {
+        propsSignal.pending.push({ f: msg.f, i: msg.i, vx: msg.vx, vz: msg.vz, speed: msg.speed })
+      }
+      break
   }
+}
+
+// ---------- synced race ----------
+
+const COUNTDOWN_MS = 3300
+const GRID_SPACING_M = 3.4
+
+/**
+ * Line everyone up and count down. Called for both the local initiator and a
+ * received race message - LAN latency means both machines start within a few
+ * milliseconds, which is far tighter than human reaction time.
+ *
+ * The grid slot is derived from sorted relay ids, so every machine computes
+ * the same grid without negotiating.
+ */
+export function startRaceCountdown(raceId: number, round: number): void {
+  const now = performance.now()
+  if (now < raceSignal.goAt) return // already counting down - first race wins
+  const ids = [myId, ...Object.keys(useNetStore.getState().peers).map(Number)].sort((a, b) => a - b)
+  const slot = Math.max(0, ids.indexOf(myId))
+  raceSignal.slot = (slot - (ids.length - 1) / 2) * GRID_SPACING_M
+  raceSignal.raceId = raceId
+  raceSignal.goAt = now + COUNTDOWN_MS
+  raceSignal.active = true
+  raceSignal.nonce++
+  // Fresh shared deal of the crash props for this race.
+  propsSignal.round = round
+  propsSignal.pending.length = 0
+}
+
+/** Local race trigger (G / pad X). Broadcasts, then starts the same countdown. */
+export function requestRace(): void {
+  if (performance.now() < raceSignal.goAt) return
+  if (ws?.readyState !== WebSocket.OPEN) return
+  const raceId = (Math.random() * 0x7fffffff) | 0
+  const round = (Math.random() * 0x7fffffff) | 0
+  ws.send(JSON.stringify({ t: 'race', raceId, round }))
+  startRaceCountdown(raceId, round)
+}
+
+/** Local lap completed while a race is live - claim the win, tell the room. */
+export function reportRaceWin(ms: number): void {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ t: 'raceWin', raceId: raceSignal.raceId, ms }))
+  }
+  useNetStore.getState().setRaceResult('YOU', ms)
 }
 
 // ---------- send path ----------
@@ -292,6 +370,11 @@ export function sendPose(pos: THREE.Vector3, quat: THREE.Quaternion, speedKmh: n
   if (ws?.readyState !== WebSocket.OPEN) return
   encodePose(_sendBuf, pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w, speedKmh)
   ws.send(_sendBuf)
+}
+
+export function sendPropPop(f: number, i: number, vx: number, vz: number, speed: number): void {
+  if (ws?.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({ t: 'prop', round: propsSignal.round, f, i, vx, vz, speed }))
 }
 
 // keep POSE_BYTES exported-through for the relay's sanity check

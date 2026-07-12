@@ -132,6 +132,7 @@ let padResetPrev = false
 let padCamPrev = false
 let padRestartPrev = false
 let padMenuPrev = false
+let padRacePrev = false
 let mounted = 0
 
 /**
@@ -156,6 +157,13 @@ export const cameraSignal = { cycleNonce: 0 }
  * Bumped on a rising edge only. Gamepad: View/Back (8) restarts, Menu/Start (9) exits.
  */
 export const restartSignal = { nonce: 0 }
+
+/**
+ * "Let's race!" requests - G on the keyboard, X on the pad. Rising edge only.
+ * Only the net layer listens (multiplayer starts a synced countdown); in
+ * single-player nothing consumes it and the key does nothing.
+ */
+export const raceRequestSignal = { nonce: 0 }
 
 function setDevice(d: 'keyboard' | 'gamepad') {
   if (device === d) return
@@ -223,6 +231,9 @@ function onKeyDown(e: KeyboardEvent) {
     case 'KeyC':
       // `e.repeat` is filtered at the top, so holding C cycles exactly once.
       cameraSignal.cycleNonce++
+      break
+    case 'KeyG':
+      raceRequestSignal.nonce++
       break
     default:
       handled = false
@@ -346,11 +357,16 @@ export function updateInput(dt: number): void {
     const menu = pad.buttons[9]?.pressed ?? false // Menu / Start
     if (menu && !padMenuPrev) window.location.reload()
     padMenuPrev = menu
+
+    const x = pad.buttons[2]?.pressed ?? false // X - race!
+    if (x && !padRacePrev) raceRequestSignal.nonce++
+    padRacePrev = x
   } else {
     padResetPrev = false
     padCamPrev = false
     padRestartPrev = false
     padMenuPrev = false
+    padRacePrev = false
     if (device === 'gamepad') setDevice('keyboard')
   }
 

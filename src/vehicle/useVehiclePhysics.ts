@@ -39,7 +39,7 @@ import type { CarBodyHandle } from './carVisual'
 import { ghostRecorder } from './ghost'
 import { LapTracker } from './lapTracker'
 import { trickDetector } from './trickDetector'
-import { vehicleSignals } from './vehicleSignals'
+import { raceSignal, vehicleSignals } from './vehicleSignals'
 import {
   AERO,
   ASSIST,
@@ -188,6 +188,7 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     resetPending: false,
     restartPending: false,
     restartTick: 0,
+    raceTick: 0,
     latAccel: 0,
     longAccel: 0,
     beta: 0,
@@ -248,6 +249,31 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
     if (s.restartTick !== restartSignal.nonce) {
       s.restartTick = restartSignal.nonce
       s.restartPending = true
+    }
+
+    // Synced multiplayer race: line up on the grid (raceSignal.slot metres
+    // across the start line) - the exact restart flow, plus a slot offset.
+    if (s.raceTick !== raceSignal.nonce) {
+      s.raceTick = raceSignal.nonce
+      s.restartPending = false
+      s.resetPending = false
+      restartAtSpawn(body, raceSignal.slot)
+      lap.onTeleport(performance.now())
+      trickDetector.cancel()
+      vehicleSignals.resetTick++
+      s.settleSteps = 4
+      s.uprightTimer = 0
+      s.belowTerrainTimer = 0
+      telemetry.impact = 0
+      return
+    }
+
+    // Countdown: engine and brakes are locked until GO. Steering stays live so
+    // the wheels can twitch with anticipation - it reads as revving at the line.
+    if (raceSignal.goAt > 0 && performance.now() < raceSignal.goAt) {
+      input.throttle = 0
+      input.brake = 0
+      input.handbrake = false
     }
     if (s.restartPending) {
       s.restartPending = false
@@ -869,14 +895,16 @@ function reportNaN(s: { nanReported: boolean }, where: string) {
  * Restart the run: back to the start line, facing down the straight, stopped.
  * `getSpawn()` is a pure function of the road spline, so this is the one teleport
  * that cannot depend on the car's (possibly poisoned) current position.
+ * `lateralOffset` slides the spot sideways across the line - the multiplayer
+ * race grid slot (0 for a plain restart).
  */
-function restartAtSpawn(body: RapierRigidBody) {
+function restartAtSpawn(body: RapierRigidBody, lateralOffset = 0) {
   const spawn = getSpawn()
   if (!finite(spawn.position.x) || !finite(spawn.position.y) || !finite(spawn.position.z)) return
 
-  _rp.x = spawn.position.x
+  _rp.x = spawn.position.x + Math.cos(spawn.rotationY) * lateralOffset
   _rp.y = spawn.position.y
-  _rp.z = spawn.position.z
+  _rp.z = spawn.position.z - Math.sin(spawn.rotationY) * lateralOffset
   body.setTranslation(_rp, true)
 
   _q.setFromAxisAngle(AXIS_Y, spawn.rotationY)

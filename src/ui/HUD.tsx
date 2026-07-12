@@ -19,7 +19,7 @@ import { CONFIG } from '../core/config'
 import { telemetry } from '../core/telemetry'
 import { useGameStore } from '../core/store'
 import { LAP } from '../vehicle/tuning'
-import { vehicleSignals } from '../vehicle/vehicleSignals'
+import { raceSignal, vehicleSignals } from '../vehicle/vehicleSignals'
 import * as audio from '../audio/AudioEngine'
 import { mpEnabled } from '../net/net'
 import { useNetStore } from '../net/netStore'
@@ -82,6 +82,7 @@ export function HUD() {
   const speedRef = useRef<HTMLDivElement>(null)
   const gearRef = useRef<HTMLDivElement>(null)
   const clockRef = useRef<HTMLDivElement>(null)
+  const countRef = useRef<HTMLDivElement>(null)
   const toastId = useRef(0)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -123,6 +124,7 @@ export function HUD() {
     let lastSpeed = -1
     let lastGear = -1
     let lastClock = ''
+    let lastCount = ''
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
@@ -170,6 +172,32 @@ export function HUD() {
         if (driftGrace <= 0) {
           if (driftSeconds >= DRIFT_MIN_S) showToast(`NICE DRIFT +${driftSeconds.toFixed(1)}s`)
           driftSeconds = 0
+        }
+      }
+
+      // ----- multiplayer race countdown: 3 - 2 - 1 - GO! -----
+      const countEl = countRef.current
+      if (countEl) {
+        let txt = ''
+        if (raceSignal.goAt > 0) {
+          const rem = raceSignal.goAt - now
+          if (rem > 0) txt = String(Math.min(3, Math.ceil(rem / 1000)))
+          else if (rem > -1100) txt = 'GO!'
+        }
+        if (txt !== lastCount) {
+          lastCount = txt
+          countEl.textContent = txt
+          countEl.classList.toggle('hud-count--on', txt !== '')
+          countEl.classList.toggle('hud-count--go', txt === 'GO!')
+          if (txt === 'GO!') {
+            audio.playLap(true)
+          } else if (txt !== '') {
+            audio.playLanding(0.4)
+            // restart the pop animation for each number
+            countEl.style.animation = 'none'
+            void countEl.offsetWidth
+            countEl.style.animation = ''
+          }
         }
       }
 
@@ -241,13 +269,21 @@ export function HUD() {
     [showToast]
   )
 
-  // ---------- multiplayer join / leave announcements ----------
+  // ---------- multiplayer join / leave / race-winner announcements ----------
   useEffect(
     () =>
       useNetStore.subscribe((s, prev) => {
         if (s.eventNonce !== prev.eventNonce && s.lastEvent) {
           if (s.lastEvent.kind === 'join') showToast(`${s.lastEvent.name} JOINED THE RUN!`, true)
           else showToast(`${s.lastEvent.name} LEFT`, false, 'void')
+        }
+        if (s.raceResultNonce !== prev.raceResultNonce && s.raceResult) {
+          const r = s.raceResult
+          audio.playLap(true)
+          showToast(
+            r.name === 'YOU' ? `YOU WIN THE RACE!  ${formatLap(r.ms)}` : `${r.name} WINS!  ${formatLap(r.ms)}`,
+            true
+          )
         }
       }),
     [showToast]
@@ -350,6 +386,9 @@ export function HUD() {
         </div>
       )}
 
+      {/* race countdown - text written from the rAF loop, never React state */}
+      <div className="hud-count" ref={countRef} />
+
       <div className={`hud-hint${hintGone ? ' hud-hint--gone' : ''}`}>
         {inputDevice === 'gamepad' ? (
           <>
@@ -365,6 +404,12 @@ export function HUD() {
             <em>camera</em>
             <b className="hud-key">Y</b>
             <em>reset</em>
+            {mpEnabled() && (
+              <>
+                <b className="hud-key">X</b>
+                <em>race!</em>
+              </>
+            )}
             <b className="hud-key">VIEW</b>
             <em>restart</em>
             <b className="hud-key">MENU</b>
@@ -376,6 +421,12 @@ export function HUD() {
             <em>drive</em>
             <b className="hud-key">SPACE</b>
             <em>handbrake</em>
+            {mpEnabled() && (
+              <>
+                <b className="hud-key">G</b>
+                <em>race!</em>
+              </>
+            )}
             <b className="hud-key">C</b>
             <em>camera</em>
             <b className="hud-key">R</b>

@@ -715,4 +715,35 @@ html[data-intro] .hud-mp { opacity: 0; }
   opacity: 0.85;
 }
 .hud-mp__stat--score { color: var(--amber); }
+
+/* ---------------- race countdown (dead centre, huge) ---------------- */
+
+.hud-count {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  transform: translate(-50%, -50%);
+  font-size: 140px;
+  font-weight: 700;
+  color: var(--amber);
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  animation: hud-count-pop 900ms ease-out;
+}
+.hud-count--on { opacity: 1; }
+.hud-count--go {
+  color: #FFE7B0;
+  animation: hud-count-go 1100ms ease-out forwards;
+}
+@keyframes hud-count-pop {
+  0% { transform: translate(-50%, -50%) scale(1.45); opacity: 0.4; }
+  18% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.94); opacity: 0.95; }
+}
+@keyframes hud-count-go {
+  0% { transform: translate(-50%, -50%) scale(0.7); opacity: 1; }
+  22% { transform: translate(-50%, -50%) scale(1.35); }
+  60% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0; }
+}
 `

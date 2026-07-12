@@ -17,11 +17,25 @@ import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 
 import { CONFIG } from '../core/config'
+import { raceRequestSignal } from '../core/input'
+import { propsSignal } from '../core/propsSignal'
 import { useGameStore } from '../core/store'
 import { telemetry } from '../core/telemetry'
 import { tricksState } from '../core/tricks'
-import { vehicleSignals } from '../vehicle/vehicleSignals'
-import { connect, disconnect, peerPoses, playerColor, playerName, sendHello, sendPose, sendStats } from './net'
+import { raceSignal, vehicleSignals } from '../vehicle/vehicleSignals'
+import {
+  connect,
+  disconnect,
+  peerPoses,
+  playerColor,
+  playerName,
+  reportRaceWin,
+  requestRace,
+  sendHello,
+  sendPose,
+  sendPropPop,
+  sendStats,
+} from './net'
 import { useNetStore } from './netStore'
 
 const SEND_HZ = 60
@@ -31,7 +45,12 @@ const STATS_MS = 500
 declare global {
   interface Window {
     /** Dev probe: live net state, same spirit as __game / __hud. */
-    __net?: { store: typeof useNetStore; peerPoses: typeof peerPoses }
+    __net?: {
+      store: typeof useNetStore
+      peerPoses: typeof peerPoses
+      raceSignal: typeof raceSignal
+      propsSignal: typeof propsSignal
+    }
   }
 }
 
@@ -40,15 +59,32 @@ export function NetSystem() {
 
   useEffect(() => {
     connect()
-    window.__net = { store: useNetStore, peerPoses }
+    window.__net = { store: useNetStore, peerPoses, raceSignal, propsSignal }
 
     const name = playerName()
     const color = playerColor(CONFIG.carColor)
     sendHello({ t: 'hello', name, body: useGameStore.getState().carBody, color })
 
+    // Crash props go into shared-round mode: layouts are dealt by race starts
+    // (never local resets), and local bursts are broadcast to the room.
+    propsSignal.shared = true
+    propsSignal.round = 0
+    propsSignal.onLocalPop = (p) => sendPropPop(p.f, p.i, p.vx, p.vz, p.speed)
+
     // Garage swap mid-session: tell everyone the new body.
+    // Race win: OUR completed lap while a race is live claims it - lapTracker
+    // already rejects cut courses and reversed laps, so a win is a real lap.
     const unsub = useGameStore.subscribe((s, prev) => {
       if (s.carBody !== prev.carBody) sendHello({ t: 'hello', name, body: s.carBody, color })
+      if (
+        s.lapCount !== prev.lapCount &&
+        s.lastLapMs !== null &&
+        raceSignal.active &&
+        performance.now() > raceSignal.goAt
+      ) {
+        raceSignal.active = false
+        reportRaceWin(s.lastLapMs)
+      }
     })
 
     // Stats on change only - lap times move a few times a minute, the trick
@@ -79,11 +115,21 @@ export function NetSystem() {
       clearInterval(statsTimer)
       unsub()
       disconnect()
+      propsSignal.shared = false
+      propsSignal.onLocalPop = null
       delete window.__net
     }
   }, [])
 
+  const raceReqTick = useRef(0)
+
   useFrame(() => {
+    // G / pad X: propose a synced race to the room.
+    if (raceReqTick.current !== raceRequestSignal.nonce) {
+      raceReqTick.current = raceRequestSignal.nonce
+      requestRace()
+    }
+
     if (!vehicleSignals.ready) return
     const now = performance.now()
     if (now - lastPoseSend.current < SEND_MS) return

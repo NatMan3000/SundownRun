@@ -35,7 +35,12 @@ interface NetStore {
   eventNonce: number
   lastEvent: NetEvent | null
 
+  /** Race result announcement - "KAI-B WINS!" toast material. */
+  raceResultNonce: number
+  raceResult: { name: string; ms: number } | null
+
   setStatus: (s: NetStatus) => void
+  setRaceResult: (name: string, ms: number) => void
   upsertPeer: (p: PeerInfo, announce: boolean) => void
   updatePeerStats: (
     id: number,
@@ -50,8 +55,13 @@ export const useNetStore = create<NetStore>((set) => ({
   peers: {},
   eventNonce: 0,
   lastEvent: null,
+  raceResultNonce: 0,
+  raceResult: null,
 
   setStatus: (status) => set((s) => (s.status === status ? s : { status })),
+
+  setRaceResult: (name, ms) =>
+    set((s) => ({ raceResultNonce: s.raceResultNonce + 1, raceResult: { name, ms } })),
 
   upsertPeer: (p, announce) =>
     set((s) => {

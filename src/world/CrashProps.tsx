@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useBeforePhysicsStep } from '@react-three/rapier'
 import { CONFIG } from '../core/config'
+import { propsSignal } from '../core/propsSignal'
 import { mulberry32 } from '../core/random'
 import { getTerrainHeight, roadDistance } from '../core/terrain'
 import { emitTrick } from '../core/tricks'
@@ -188,6 +189,39 @@ function CrashPropsInner() {
     return b
   }, [])
 
+  /** Burst cluster (f, i): kill it and send its pieces flying, shaped by the
+   *  smashing car's velocity. Shared by the local hit test and remote pop
+   *  events - only the local path scores points. */
+  function burst(f: number, i: number, vx: number, vz: number, speed: number): boolean {
+    const spec = SPECS[f]
+    const c = clustersRef.current[f]?.[i]
+    if (!c || !c.alive) return false
+    c.alive = false
+    const inv = 1 / (speed || 1)
+    const nP = spec.formation.length
+    for (let b = 0; b < nP; b++) {
+      const k = bases[f] + i * nP + b
+      flyAge[k] = 0
+      flyPos[k * 3] = c.x + spec.formation[b][0]
+      flyPos[k * 3 + 1] = c.y + spec.formation[b][1]
+      flyPos[k * 3 + 2] = c.z + spec.formation[b][2]
+      const fan = (b / Math.max(1, nP - 1) - 0.5) * 0.9
+      const co = Math.cos(fan)
+      const sn = Math.sin(fan)
+      const dx = (vx * co - vz * sn) * inv
+      const dz = (vx * sn + vz * co) * inv
+      const kick = 4 + speed * spec.kick + b * 0.6
+      flyVel[k * 3] = dx * kick
+      flyVel[k * 3 + 1] = spec.lift + b * 0.7 + speed * 0.12
+      flyVel[k * 3 + 2] = dz * kick
+      flySpin[k * 3] = (b % 2 ? 1 : -1) * (2 + b) * spec.tumble
+      flySpin[k * 3 + 1] = 1.5 * (b - nP / 2) * spec.tumble
+      flySpin[k * 3 + 2] = ((b % 3) - 1) * spec.tumble
+    }
+    dirtyRef.current = true
+    return true
+  }
+
   // ---- physics-step side: find the car, pop clusters it hits ----
   useBeforePhysicsStep((w: BodyQuery) => {
     let car: any = null
@@ -208,41 +242,31 @@ function CrashPropsInner() {
         if (!c.alive) continue
         if (Math.abs(p.x - c.x) > spec.hitR || Math.abs(p.z - c.z) > spec.hitR) continue
         if (p.y - c.y > 3.4) continue // flew clean over it - no burst
-        c.alive = false
-        const inv = 1 / (speed || 1)
-        const nP = spec.formation.length
-        for (let b = 0; b < nP; b++) {
-          const k = bases[f] + i * nP + b
-          flyAge[k] = 0
-          flyPos[k * 3] = c.x + spec.formation[b][0]
-          flyPos[k * 3 + 1] = c.y + spec.formation[b][1]
-          flyPos[k * 3 + 2] = c.z + spec.formation[b][2]
-          const fan = (b / Math.max(1, nP - 1) - 0.5) * 0.9
-          const co = Math.cos(fan)
-          const sn = Math.sin(fan)
-          const dx = (v.x * co - v.z * sn) * inv
-          const dz = (v.x * sn + v.z * co) * inv
-          const kick = 4 + speed * spec.kick + b * 0.6
-          flyVel[k * 3] = dx * kick
-          flyVel[k * 3 + 1] = spec.lift + b * 0.7 + speed * 0.12
-          flyVel[k * 3 + 2] = dz * kick
-          flySpin[k * 3] = (b % 2 ? 1 : -1) * (2 + b) * spec.tumble
-          flySpin[k * 3 + 1] = 1.5 * (b - nP / 2) * spec.tumble
-          flySpin[k * 3 + 2] = ((b % 3) - 1) * spec.tumble
-        }
+        if (!burst(f, i, v.x, v.z, speed)) continue
         emitTrick(spec.label, spec.points, 1)
-        dirtyRef.current = true
+        propsSignal.onLocalPop?.({ f, i, vx: v.x, vz: v.z, speed })
       }
     }
   })
 
-  // ---- render side: rescatter on reset, animate bursts ----
+  // ---- render side: rescatter on round change, animate bursts ----
   useFrame((_, dt) => {
-    if (vehicleSignals.resetTick !== roundRef.current) {
-      roundRef.current = vehicleSignals.resetTick
-      clustersRef.current = scatterAll(roundRef.current)
+    // Single-player: every reset is a new round (fresh scatter). Multiplayer:
+    // rounds are shared and dealt by race starts (core/propsSignal.ts) -
+    // local resets must NOT re-roll a layout the other machines still have.
+    const round = propsSignal.shared ? propsSignal.round : vehicleSignals.resetTick
+    if (round !== roundRef.current) {
+      roundRef.current = round
+      clustersRef.current = scatterAll(round)
       flyAge.fill(-1)
       dirtyRef.current = true
+    }
+
+    // Remote pops: someone else smashed these clusters on their machine.
+    // Burst here too (no points - they scored, we spectate).
+    while (propsSignal.pending.length > 0) {
+      const ev = propsSignal.pending.pop()!
+      burst(ev.f, ev.i, ev.vx, ev.vz, ev.speed)
     }
 
     let animating = false

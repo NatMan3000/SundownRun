@@ -77,6 +77,7 @@ bun run build     # outputs to dist/
 | Throttle | W or up | Right trigger |
 | Brake / reverse | S or down | Left trigger |
 | Handbrake (drift!) | Space | A button |
+| Start a race (multiplayer only) | G | X button |
 | Camera view (chase / close / bonnet) | C | RB |
 | Reset to road | R | Y button |
 | Restart at the start line | Shift+R | View button |
@@ -106,6 +107,13 @@ You can genuinely SMASH into each other. Ramming your mate off a jump is the
 whole point. If you'd rather drive through each other like ghosts, set
 `multiplayerRam: false` in the knob file. More than two players works too -
 every extra person who opens the link joins the same world.
+
+**Press G (or X on a controller) to start a RACE**: everyone teleports to the
+start line side by side, gets a 3-2-1 countdown (engines locked - no jump
+starts), and the first one back around the track wins. Cutting across the
+grass doesn't count, same as lap records. Every race also deals a fresh
+layout of hay bales, crates and barrels - and when your mate smashes one,
+you see it burst on your screen too.
 
 Windows host note: run the command from the folder in a terminal
 (`bun run mp`), or make a `Multiplayer.bat` with that line in it.

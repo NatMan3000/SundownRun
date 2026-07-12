@@ -43,6 +43,32 @@ export interface StatsMsg {
   trickScore: number
 }
 
+/** Someone pressed the race button: everyone lines up and counts down.
+ *  `round` deals a fresh shared crash-prop layout for the race. */
+export interface RaceMsg {
+  t: 'race'
+  raceId: number
+  round: number
+}
+
+/** "I crossed the line" - the first one of these per raceId wins. */
+export interface RaceWinMsg {
+  t: 'raceWin'
+  raceId: number
+  ms: number
+}
+
+/** A crash-prop cluster burst on the sender's machine. */
+export interface PropMsg {
+  t: 'prop'
+  round: number
+  f: number
+  i: number
+  vx: number
+  vz: number
+  speed: number
+}
+
 /** Sent by the relay to a client the moment it connects. */
 export interface WelcomeMsg {
   t: 'welcome'
@@ -61,7 +87,7 @@ export interface LeaveMsg {
   id: number
 }
 
-export type ClientMsg = HelloMsg | StatsMsg
+export type ClientMsg = HelloMsg | StatsMsg | RaceMsg | RaceWinMsg | PropMsg
 export type RelayMsg = WelcomeMsg | JoinMsg | LeaveMsg | (ClientMsg & { from: number })
 
 export function encodePose(
