@@ -939,6 +939,7 @@ const RF = new Float32Array(DENSE) // width flare at this sample
 // so re-authoring the circuit cannot silently bank the wrong way.
 const BANKS = [
   { anchor: [8, 168] as const, holdM: 110, rampM: 40, slope: 0.2 }, //     the hairpin
+  { anchor: [421, 368] as const, holdM: 120, rampM: 45, slope: 0.18 }, //  the sweep after the hairpin, onto the north straight
   { anchor: [-390, -350] as const, holdM: 150, rampM: 50, slope: 0.19 }, // last corner onto the south straight
 ]
 

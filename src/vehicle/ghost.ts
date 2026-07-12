@@ -63,7 +63,8 @@ const TRACE_VERSION = 2
 // storage alone would leave the stale best sitting in memory until a reload.
 // Epoch 3: the hairpin + last corner were BANKED (terrain.ts BANKS) - a lap
 // time or ghost driven on the flat corners is not comparable to the new track.
-const START_LINE_EPOCH = 3
+// Epoch 4: the post-hairpin sweep banked too - same ruling, records wipe once.
+const START_LINE_EPOCH = 4
 const EPOCH_KEY = 'sundown-run.lapEpoch'
 
 function migrateStaleRecords(): void {
