@@ -62,30 +62,6 @@ const _pos = new THREE.Vector3()
 const _quat = new THREE.Quaternion()
 const _park = { x: 0, y: PARK_Y, z: 0 }
 
-// ---------- name tag ----------
-
-function buildNameTexture(name: string, color: string): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 64
-  const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = 'rgba(26, 20, 16, 0.55)'
-  ctx.beginPath()
-  ctx.roundRect(2, 6, 252, 52, 16)
-  ctx.fill()
-  ctx.strokeStyle = color
-  ctx.lineWidth = 3
-  ctx.stroke()
-  ctx.font = '700 30px system-ui, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#F2E8D5'
-  ctx.fillText(name, 128, 34)
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.colorSpace = THREE.SRGBColorSpace
-  return tex
-}
-
 // ============================================================
 
 function RemoteCar({ peer }: { peer: PeerInfo }) {
@@ -140,21 +116,13 @@ function RemoteCar({ peer }: { peer: PeerInfo }) {
     () => new THREE.MeshStandardMaterial({ color: '#20242A', roughness: 0.66, metalness: 0.15 }),
     []
   )
-  const nameTex = useMemo(() => buildNameTexture(peer.name, peer.color), [peer.name, peer.color])
-  const nameMat = useMemo(
-    () => new THREE.SpriteMaterial({ map: nameTex, depthWrite: false, transparent: true }),
-    [nameTex]
-  )
-
   useEffect(
     () => () => {
       paintMat.dispose()
       glassMat.dispose()
       darkMat.dispose()
-      nameMat.dispose()
-      nameTex.dispose()
     },
-    [paintMat, glassMat, darkMat, nameMat, nameTex]
+    [paintMat, glassMat, darkMat]
   )
 
   // ----- physics step: hand the collider its next pose -----
@@ -220,9 +188,6 @@ function RemoteCar({ peer }: { peer: PeerInfo }) {
           </group>
         </group>
       ))}
-
-      {/* floating name tag */}
-      <sprite material={nameMat} position={[0, 1.7, 0]} scale={[1.9, 0.48, 1]} />
     </group>
   )
 }

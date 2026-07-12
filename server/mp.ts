@@ -42,10 +42,10 @@ setTimeout(() => {
 ${bold}${amber}  SUNDOWN RUN - MULTIPLAYER${reset}
 
   This machine:   ${bold}http://localhost:5199/?mp=1&name=JOSH${reset}
-  Other machines: ${bold}${ip ? `http://${ip}:5199/?mp=1&name=DAD` : '(no LAN address found - check wifi)'}${reset}
+  Other machines: ${bold}${ip ? `http://${ip}:5199/?mp=1&name=DAD&color=red` : '(no LAN address found - check wifi)'}${reset}
 
-  ${dim}Change name=... to whatever you like (that's your name tag).
-  Add &color=red (or any colour) so the cars don't match.
+  ${dim}Change name=... to whatever you like, and color=... to any
+  colour (green, orange, %23FF00FF...) so every car looks different.
   Everyone who opens a link joins the same world. Ctrl+C stops it all.
 
   Friends can't connect? This computer's firewall must allow ports
