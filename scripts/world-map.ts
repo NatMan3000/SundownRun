@@ -63,7 +63,27 @@ for (let i = 0; i < D.count; i += STEP) {
   ])
 }
 
+// ---------- source line lookup (so every marker links to file:line) ----------
+
+const srcCache = new Map<string, string[]>()
+function lineOf(file: string, needle: string): number {
+  let lines = srcCache.get(file)
+  if (!lines) {
+    lines = require('node:fs').readFileSync(new URL('../' + file, import.meta.url), 'utf8').split('\n')
+    srcCache.set(file, lines!)
+  }
+  const i = lines!.findIndex((l) => l.includes(needle))
+  return i + 1 // 1-based; 0 = not found (link still lands on the file)
+}
+
 // ---------- named places + the code that makes them ----------
+
+interface CodeRef {
+  file: string
+  line: number
+  label: string
+  note: string
+}
 
 interface Marker {
   x: number
@@ -72,11 +92,13 @@ interface Marker {
   cls: string
   title: string
   what: string
-  code: string
+  refs: CodeRef[]
   tryThis?: string
 }
 
 const markers: Marker[] = []
+
+const TERRAIN = 'src/core/terrain.ts'
 
 const spawn = getSpawn()
 markers.push({
@@ -86,8 +108,10 @@ markers.push({
   cls: 'start',
   title: 'Where you start',
   what: 'The car spawns here, on the start line, pointing down the south straight.',
-  code: 'src/core/terrain.ts -> getSpawn() reads START_LINE_T, which is anchored to a world position on the straight.',
-  tryThis: 'In multiplayer everyone spawns here, scattered sideways so nobody lands on anyone.',
+  refs: [
+    { file: TERRAIN, line: lineOf(TERRAIN, 'export function getSpawn'), label: 'getSpawn()', note: 'reads START_LINE_T and faces the car down the road' },
+    { file: 'src/vehicle/Vehicle.tsx', line: lineOf('src/vehicle/Vehicle.tsx', 'getSpawn()'), label: 'Vehicle', note: 'in multiplayer, scatters everyone sideways so nobody spawns inside anyone' },
+  ],
 })
 
 const sl = roadSpline.getPointAt(START_LINE_T)
@@ -98,7 +122,11 @@ markers.push({
   cls: 'start',
   title: 'Start / finish line',
   what: 'Laps are timed from here, all the way round, back to here. Miss a checkpoint (by cutting across the grass) and the lap is void.',
-  code: 'src/core/terrain.ts -> START_LINE_T places it; src/vehicle/lapTracker.ts does the timing and the anti-cheat; src/world/StartLine.tsx paints it.',
+  refs: [
+    { file: TERRAIN, line: lineOf(TERRAIN, 'export const START_LINE_T'), label: 'START_LINE_T', note: 'places the line on the road' },
+    { file: 'src/vehicle/lapTracker.ts', line: 1, label: 'lapTracker', note: 'the timing + the anti-cheat checkpoints' },
+    { file: 'src/world/StartLine.tsx', line: 1, label: 'StartLine', note: 'paints the checkered line and the banner' },
+  ],
 })
 
 for (const [ji, j] of JUMPS.entries()) {
@@ -109,8 +137,10 @@ for (const [ji, j] of JUMPS.entries()) {
     cls: 'jump',
     title: `Crest jump ${ji + 1}`,
     what: `A ${j.rise} m rise built into the road itself - hit it flat out and both wheels leave the ground. A dip ${j.dropAt} m later means you land on a downslope instead of slamming.`,
-    code: 'src/core/terrain.ts -> JUMPS. Each jump is just numbers: rise, width (sigma), and where the landing dip sits.',
-    tryThis: `Change rise: ${j.rise} to something bigger in JUMPS and the whole hill grows - road, physics, everything.`,
+    refs: [
+      { file: TERRAIN, line: lineOf(TERRAIN, `anchor: [${j.anchor[0]}, ${j.anchor[1]}]`), label: `JUMPS[${ji}]`, note: 'this jump: rise, width (sigma) and where the landing dip sits' },
+    ],
+    tryThis: `Change rise: ${j.rise} to something bigger and the whole hill grows - road, physics, everything.`,
   })
 }
 
@@ -123,7 +153,10 @@ for (const [bi, b] of BANKS.entries()) {
     cls: 'bank',
     title: `Banked corner - ${bankNames[bi] ?? 'corner'}`,
     what: `The road here tilts like a velodrome: the outside edge is raised (slope ${b.slope}, so about ${(b.slope * 10).toFixed(1)} m per 10 m of road width), held for ${b.holdM} m of corner. The tilt pushes the car into the turn so you can carry real speed.`,
-    code: 'src/core/terrain.ts -> BANKS. One line per corner; the code works out which way the corner turns by itself. The collider, terrain and drawn road all inherit the tilt from getTerrainHeight().',
+    refs: [
+      { file: TERRAIN, line: lineOf(TERRAIN, `anchor: [${b.anchor[0]}, ${b.anchor[1]}]`), label: `BANKS[${bi}]`, note: 'this corner - one line; the code works out the turn direction itself' },
+      { file: TERRAIN, line: lineOf(TERRAIN, 'export function getTerrainHeight'), label: 'getTerrainHeight()', note: 'carries the tilt, so collider + terrain + drawn road all inherit it' },
+    ],
     tryThis: `Change slope: ${b.slope} - 0.1 is gentle, 0.25 is a wall of death. Save and drive it.`,
   })
 }
@@ -144,8 +177,14 @@ for (const p of PLAYGROUNDS) {
     cls: 'play',
     title: `${p.kind.toUpperCase()} - playground landform`,
     what: p.what,
-    code: 'src/core/terrain.ts -> PLAYGROUNDS. Each toy is a position, a heading and a kind; playgroundHeight() sculpts the actual hill out of smooth bumps (gaussians).',
-    tryThis: 'Add your own line to PLAYGROUNDS - pick an empty spot on this map, choose a kind, and a new hill appears in the world.',
+    refs: [
+      { file: TERRAIN, line: lineOf(TERRAIN, `x: ${p.x}, z: ${p.z},`), label: 'this toy', note: 'a position, a heading and a kind - that is the whole recipe' },
+      { file: TERRAIN, line: lineOf(TERRAIN, 'function playgroundHeight'), label: 'playgroundHeight()', note: `sculpts the ${p.kind} shape out of smooth bumps (gaussians)` },
+    ],
+    tryThis:
+      'BUILD YOUR OWN: open src/core/terrain.ts at the line above, and paste a new line into the PLAYGROUNDS list like:<br>' +
+      "<code>{ x: 120, z: 60, heading: 0.5, kind: 'kicker', reach: 135, what: 'my jump' },</code><br>" +
+      "x and z are THIS map's coordinates - click any empty spot on the map to copy some. kind can be kicker, double, bowl, table, ramp or bigair. Save the file and the hill exists.",
   })
 }
 
@@ -189,7 +228,9 @@ for (const p of PLAYGROUNDS) {
       cls: hidden ? 'shardHidden' : 'shard',
       title: hidden ? 'Sun shard (hidden!)' : 'Sun shard',
       what: `One of the 10 collectables: ${where}.`,
-      code: 'src/world/Delights.tsx -> buildShards(). Every shard is placed by road position (a number from 0 to 1 around the lap), so if the track is ever redrawn the shards move with it.',
+      refs: [
+        { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'function buildShards'), label: 'buildShards()', note: 'every shard is placed by road position (0..1 around the lap), so a redrawn track moves the shards with it' },
+      ],
     })
   }
 }
@@ -202,7 +243,9 @@ markers.push({
   cls: 'note',
   title: 'Hay bales, crate towers, barrel rings',
   what: 'The smashables scatter to NEW random open spots every time you reset (every multiplayer race deals a fresh shared layout). That is why they are not pinned on this map - no two rounds match.',
-  code: 'src/world/CrashProps.tsx -> scatterAll(round). The round number seeds the randomness, so a round is repeatable but each one is different.',
+  refs: [
+    { file: 'src/world/CrashProps.tsx', line: lineOf('src/world/CrashProps.tsx', 'function scatterAll'), label: 'scatterAll(round)', note: 'the round number seeds the randomness - a round is repeatable, but no two match' },
+  ],
 })
 markers.push({
   x: -180,
@@ -211,7 +254,11 @@ markers.push({
   cls: 'note',
   title: '1,342 trees (and the rocks, and the grass)',
   what: 'Scattered by seeded randomness across the bowl - never on the road, never on a playground. Hit a tree above the smash speed and it bursts away; below it, solid crunch.',
-  code: 'src/world/Trees.tsx + scatter.ts place them; treeSmash.ts decides crunch vs smash; CONFIG.treeSmashKmh in src/core/config.ts is the knob.',
+  refs: [
+    { file: 'src/world/Trees.tsx', line: 1, label: 'Trees', note: 'places and draws all 1,342 of them in one draw call' },
+    { file: 'src/world/treeSmash.ts', line: 1, label: 'treeSmash', note: 'decides crunch vs smash when you hit one' },
+    { file: 'src/core/config.ts', line: lineOf('src/core/config.ts', 'treeSmashKmh'), label: 'treeSmashKmh', note: 'the knob: hit faster than this and the tree loses' },
+  ],
   tryThis: 'Josh: set treeSmashKmh: 1 in config.ts and become the forestry industry.',
 })
 
@@ -264,11 +311,22 @@ const html = `<!doctype html>
   .sub { font-size: 12px; opacity: .6; margin: 4px 0 16px; }
   #info h2 { font-size: 16px; color: var(--amber); margin: 0 0 8px; }
   #info p { font-size: 13.5px; line-height: 1.55; margin-bottom: 10px; }
-  .codebox { background: #17110C; border: 1px solid var(--edge); border-radius: 8px;
-             padding: 10px 12px; font: 12px/1.5 ui-monospace, monospace; color: #E8C99A;
-             margin-bottom: 10px; word-break: break-word; }
+  .refs h4 { font-size: 11px; letter-spacing: .14em; color: var(--amber); opacity: .8; margin: 12px 0 6px; }
+  .ref { background: #17110C; border: 1px solid var(--edge); border-radius: 8px;
+         padding: 8px 10px; margin-bottom: 7px; }
+  .ref__top { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .ref__loc { font: 11.5px ui-monospace, monospace; color: #FFCE8A; text-decoration: none;
+              background: rgba(255,179,92,.12); border-radius: 5px; padding: 2px 7px; }
+  .ref__loc:hover { background: rgba(255,179,92,.25); }
+  .ref__gh { font-size: 11px; color: var(--cream); opacity: .5; text-decoration: none; }
+  .ref__gh:hover { opacity: 1; }
+  .ref__note { font-size: 12.5px; line-height: 1.45; opacity: .85; }
+  .ref__note b { color: #E8C99A; font-weight: 600; }
+  .coords { font-size: 12px; opacity: .55; font-family: ui-monospace, monospace; margin: -4px 0 10px; }
   .try { border-left: 3px solid var(--amber); padding: 6px 10px; font-size: 13px;
-         background: rgba(255,179,92,.07); border-radius: 0 6px 6px 0; }
+         background: rgba(255,179,92,.07); border-radius: 0 6px 6px 0; line-height: 1.5; }
+  .try code { display: inline-block; font: 11px ui-monospace, monospace; color: #E8C99A;
+              background: #17110C; border-radius: 5px; padding: 3px 7px; margin: 5px 0; }
   .hint { font-size: 12.5px; opacity: .65; line-height: 1.5; }
   .legend { display: grid; grid-template-columns: 22px 1fr; gap: 4px 8px; font-size: 12.5px;
             margin: 14px 0; align-items: center; }
@@ -283,12 +341,18 @@ const html = `<!doctype html>
   .arealabel { font-size: 15px; letter-spacing: .3em; fill: rgba(242,232,213,.5);
                text-anchor: middle; font-weight: 600; pointer-events: none; }
   #zoomhint { position: absolute; left: 12px; bottom: 10px; font-size: 11.5px; opacity: .45; }
+  #cursorpos { position: absolute; right: 12px; bottom: 10px; font: 12.5px ui-monospace, monospace;
+               color: var(--amber); background: rgba(20,14,9,.7); padding: 4px 10px; border-radius: 7px;
+               pointer-events: none; }
+  .gridline { stroke: rgba(242,232,213,.14); stroke-width: 1; }
+  .gridlabel { font: 20px ui-monospace, monospace; fill: rgba(242,232,213,.4); text-anchor: middle; }
 </style>
 </head>
 <body>
 <div id="map">
   <svg id="svg"><g id="view"></g></svg>
-  <div id="zoomhint">scroll to zoom &middot; drag to pan &middot; click a marker</div>
+  <div id="zoomhint">scroll to zoom &middot; drag to pan &middot; click a marker &middot; click empty map to copy its coordinates</div>
+  <div id="cursorpos">x 0 &middot; z 0</div>
 </div>
 <aside id="side">
   <h1>SUNDOWN RUN &mdash; WORLD MAP</h1>
@@ -298,7 +362,11 @@ const html = `<!doctype html>
     hand-drawn level file. A few hundred lines in <b>src/core/terrain.ts</b> decide where the
     hills, the road, the jumps and the banked corners go, and everything else (physics,
     grass, trees, shadows) reads from that one source of truth.</p>
-    <p class="hint">Click any marker to see what it is <i>and which bit of code makes it</i>.</p>
+    <p class="hint">Click any marker to see what it is <i>and which bit of code makes it</i> -
+    the <b>file:line</b> pills open VS Code at that exact spot.</p>
+    <p class="hint">The grid is in <b>world metres</b> - the same x / z numbers the code uses.
+    Hover anywhere to read a position, click empty map to copy it. Telling Kai
+    "put a kicker at [300, -150]" is a complete instruction.</p>
     <div class="legend">
       <span>🏁</span><span>start / finish + spawn</span>
       <span>⛰️</span><span>crest jumps (built into the road)</span>
@@ -378,6 +446,14 @@ const el = (tag, attrs, parent) => {
 };
 el('image', { href: cv.toDataURL(), x: -W/2, y: -W/2, width: W, height: W, preserveAspectRatio: 'none' });
 
+// coordinate grid, every 200 world metres - the same x/z numbers the code uses
+for (let v = -800; v <= 800; v += 200) {
+  el('line', { class: 'gridline', x1: v, y1: -W/2, x2: v, y2: W/2 });
+  el('line', { class: 'gridline', x1: -W/2, y1: v, x2: W/2, y2: v });
+  el('text', { class: 'gridlabel', x: v, y: -W/2 + 30 }).textContent = 'x ' + v;
+  el('text', { class: 'gridlabel', x: -W/2 + 55, y: v + 6 }).textContent = 'z ' + v;
+}
+
 // the road: left/right edge polygon from centre + per-point width
 const pts = DATA.road, n = pts.length;
 let leftPts = [], rightPts = [], dashD = '';
@@ -434,18 +510,59 @@ for (const m of DATA.markers) {
     ev.stopPropagation();
     if (selected) selected.classList.remove('sel');
     selected = g; g.classList.add('sel');
+    const refs = m.refs.map(r =>
+      '<div class="ref"><div class="ref__top">' +
+      '<a class="ref__loc" href="' + codeHref(r.file, r.line) + '" title="open in VS Code at this line">' + r.file + ':' + r.line + '</a>' +
+      '<a class="ref__gh" href="' + GH + r.file + '#L' + r.line + '" target="_blank" title="view on GitHub">GitHub &#8599;</a>' +
+      '</div><div class="ref__note"><b>' + r.label + '</b> &mdash; ' + r.note + '</div></div>'
+    ).join('');
     info.innerHTML =
       '<h2>' + m.icon + ' ' + m.title + '</h2>' +
+      '<div class="coords">at [' + m.x + ', ' + m.z + ']</div>' +
       '<p>' + m.what + '</p>' +
-      '<div class="codebox">' + m.code + '</div>' +
+      '<div class="refs"><h4>THE CODE THAT MAKES IT</h4>' + refs + '</div>' +
       (m.tryThis ? '<div class="try">' + m.tryThis + '</div>' : '') +
       '<p class="hint" style="margin-top:14px">click the map background to go back</p>';
   });
 }
-document.getElementById('svg').addEventListener('click', () => {
+
+// file:line links open VS Code when the map is opened from the repo (file://),
+// and fall back to GitHub when it is served over http.
+const GH = 'https://github.com/NatMan3000/SundownRun/blob/main/';
+const fileRoot = location.protocol === 'file:'
+  ? decodeURIComponent(location.pathname).replace(/\\/[^/]*$/, '')
+  : null;
+function codeHref(f, l) {
+  return fileRoot ? 'vscode://file' + fileRoot + '/' + f + ':' + l : GH + f + '#L' + l;
+}
+// screen -> world
+function toWorld(clientX, clientY) {
+  const r = mapDiv.getBoundingClientRect();
+  return [Math.round((clientX - r.left - tx) / scale), Math.round((clientY - r.top - ty) / scale)];
+}
+
+const posEl = document.getElementById('cursorpos');
+let moved = false; // set true by the pan handler when a press turned into a drag
+let copiedUntil = 0;
+document.getElementById('svg').addEventListener('click', (e) => {
   if (selected) selected.classList.remove('sel');
   selected = null;
   info.innerHTML = defaultInfo;
+  if (moved) return; // a drag, not a click
+  const [wx, wz] = toWorld(e.clientX, e.clientY);
+  if (Math.abs(wx) <= W/2 && Math.abs(wz) <= W/2) {
+    const txt = '[' + wx + ', ' + wz + ']';
+    try { navigator.clipboard.writeText(txt); } catch {}
+    posEl.textContent = 'copied ' + txt;
+    posEl.style.color = '#FFE7B0';
+    copiedUntil = Date.now() + 1500;
+    setTimeout(() => { posEl.style.color = ''; }, 1500);
+  }
+});
+document.getElementById('map').addEventListener('pointermove', (e) => {
+  if (Date.now() < copiedUntil) return;
+  const [wx, wz] = toWorld(e.clientX, e.clientY);
+  posEl.textContent = 'x ' + wx + ' \\u00b7 z ' + wz;
 });
 
 // ---------- pan / zoom ----------
@@ -477,8 +594,17 @@ mapDiv.addEventListener('wheel', (e) => {
   apply();
 }, { passive: false });
 let drag = null;
-mapDiv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX - tx, y: e.clientY - ty }; mapDiv.classList.add('dragging'); });
-window.addEventListener('pointermove', (e) => { if (drag) { tx = e.clientX - drag.x; ty = e.clientY - drag.y; apply(); } });
+mapDiv.addEventListener('pointerdown', (e) => {
+  drag = { x: e.clientX - tx, y: e.clientY - ty, sx: e.clientX, sy: e.clientY };
+  moved = false;
+  mapDiv.classList.add('dragging');
+});
+window.addEventListener('pointermove', (e) => {
+  if (drag) {
+    if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) moved = true;
+    tx = e.clientX - drag.x; ty = e.clientY - drag.y; apply();
+  }
+});
 window.addEventListener('pointerup', () => { drag = null; mapDiv.classList.remove('dragging'); });
 window.addEventListener('resize', fit);
 fit();
