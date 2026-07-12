@@ -53,11 +53,20 @@ interface GameStore {
   steering: number
   setSteering: (v: number) => void
 
-  // delights
+  // delights - shards scatter fresh every reset ("round"); found counts per round
   collectiblesTotal: number
   collectiblesFound: number
   setCollectiblesTotal: (n: number) => void
   foundCollectible: () => void
+  resetCollectibles: () => void
+
+  // shard hunt: the clock starts on the round's FIRST pickup and stops on the
+  // last. huntStartedAt is a performance.now() timestamp (0 = not running).
+  huntStartedAt: number
+  huntLastMs: number | null
+  huntBestMs: number | null
+  huntStart: (now: number) => void
+  huntFinish: (ms: number) => void
 
   // lap timing (road is a closed loop). A lap only completes if the ordered
   // sector checkpoints were all hit (anti tiny-circle / reverse cheat). A lap
@@ -117,6 +126,24 @@ export const useGameStore = create<GameStore>((set) => ({
   collectiblesFound: 0,
   setCollectiblesTotal: (n) => set({ collectiblesTotal: n }),
   foundCollectible: () => set((s) => ({ collectiblesFound: s.collectiblesFound + 1 })),
+  resetCollectibles: () => set({ collectiblesFound: 0, huntStartedAt: 0 }),
+
+  huntStartedAt: 0,
+  huntLastMs: null,
+  huntBestMs: loadNumber('sundown-run.bestShardHuntMs', 0, 0, Infinity) || null,
+  huntStart: (now) => set({ huntStartedAt: now }),
+  huntFinish: (ms) =>
+    set((s) => {
+      const best = s.huntBestMs === null || ms < s.huntBestMs ? ms : s.huntBestMs
+      if (best !== s.huntBestMs) {
+        try {
+          localStorage.setItem('sundown-run.bestShardHuntMs', String(best))
+        } catch {
+          // fine - the record just won't survive a reload
+        }
+      }
+      return { huntStartedAt: 0, huntLastMs: ms, huntBestMs: best }
+    }),
 
   lapCount: 0,
   lastLapMs: null,

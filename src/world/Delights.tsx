@@ -1,13 +1,19 @@
 // ============================================================
 //  SUN SHARDS - the reason to go looking
 // ------------------------------------------------------------
-//  Ten warm crystals scattered around the circuit. Six hover over the racing
-//  line where a kid will simply drive through them. Two sit high over the crest
-//  jumps, out of reach unless the car is properly airborne. Two are hidden off
-//  the road entirely, for the player who wonders what is over there.
+//  Eleven warm crystals, and a SHARD HUNT: every reset ("round") deals
+//  ten of them to fresh random spots - six over the road, one high over
+//  a crest jump, one high over a geyser (ride the blast up to it), two
+//  hidden out in the open country. The eleventh never moves: it hangs
+//  above the cinder cone's crater, and the geyser inside the crater is
+//  the elevator (Nathan + Josh's design).
 //
-//  Every position derives from core/terrain's roadSpline, so the circuit can be
-//  redesigned and the shards follow it. Nothing here uses Math.random.
+//  The HUNT CLOCK starts on the round's first pickup and stops on the
+//  last; the best time persists (core/store.ts). A reset deals a new
+//  round: shards re-scatter, the found count and clock start over.
+//
+//  Layouts are seeded by the round number (deterministic per round, no
+//  Math.random) - same discipline as CrashProps.
 //
 //  Two InstancedMeshes (core + additive halo), one useFrame, zero per-frame
 //  allocation. Pickup is a squared-distance test against telemetry.carPosition.
@@ -18,7 +24,17 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { telemetry } from '../core/telemetry'
 import { useGameStore } from '../core/store'
-import { ROAD_LENGTH, getTerrainHeight, nearestRoadPoint, roadSpline } from '../core/terrain'
+import { mulberry32 } from '../core/random'
+import {
+  JUMPS,
+  ROAD_LENGTH,
+  getTerrainHeight,
+  nearestRoadPoint,
+  roadDistance,
+  roadSpline,
+} from '../core/terrain'
+import { vehicleSignals } from '../vehicle/vehicleSignals'
+import { VENTS } from './Geysers'
 import * as audio from '../audio/AudioEngine'
 
 /** Pickup sphere around the car's centre of mass, metres. */
@@ -67,17 +83,7 @@ function overRoad(t: number, lateral: number, height: number): THREE.Vector3 {
   return new THREE.Vector3(_p.x + ox, _p.y + height, _p.z + oz)
 }
 
-/** Hovering above the terrain, well off the road. */
-function overGround(t: number, lateral: number, height: number): THREE.Vector3 {
-  roadSpline.getPointAt(wrap(t), _p)
-  const [ox, oz] = lateralOffset(t, lateral)
-  const x = _p.x + ox
-  const z = _p.z + oz
-  return new THREE.Vector3(x, getTerrainHeight(x, z) + height, z)
-}
-
-/** Hovering above the terrain at an absolute world spot (for landmarks that are
- *  places in their own right, not road-relative - e.g. the cinder cone crater). */
+/** Hovering above the terrain at an absolute world spot. */
 function atWorld(x: number, z: number, height: number): THREE.Vector3 {
   return new THREE.Vector3(x, getTerrainHeight(x, z) + height, z)
 }
@@ -91,37 +97,84 @@ interface ShardDef {
   where: string
 }
 
-function buildShards(): ShardDef[] {
-  // The two crest jumps are authored by world position in core/terrain. Resolve
-  // them back to spline parameters so the shards ride the jumps, not a number.
-  const jump1 = nearestRoadPoint(70, -412).t
-  const jump2 = nearestRoadPoint(150, 472).t
-  const hairpin = nearestRoadPoint(8, 168).t
-  const switchbackIn = nearestRoadPoint(190, 172).t
+const COUNT = 11
 
-  return [
-    { position: overRoad(0.03, 0, 1.7), hidden: false, air: false, where: 'south straight, first one you meet' },
-    { position: overRoad(jump1 + along(AIR_LEAD), 0, AIR_HEIGHT), hidden: false, air: true, where: 'over crest jump 1' },
-    { position: overRoad(0.15, -3.2, 1.6), hidden: false, air: false, where: 'turn 1 entry, on the line' },
-    { position: overRoad(0.255, 3.4, 1.7), hidden: false, air: false, where: 'east sweeper, outside line' },
-    { position: overRoad(0.395, 0, 1.6), hidden: false, air: false, where: 'switchback inbound leg' },
-    { position: overGround(hairpin + along(6), 24, 1.5), hidden: true, air: false, where: 'behind the hairpin' },
-    { position: overRoad(0.53, -2.8, 1.6), hidden: false, air: false, where: 'hairpin exit, inside line' },
-    { position: overRoad(jump2 + along(AIR_LEAD), 0, AIR_HEIGHT), hidden: false, air: true, where: 'over crest jump 2' },
-    { position: overRoad(0.815, 3.0, 1.7), hidden: false, air: false, where: 'west sweeper' },
-    { position: overGround(switchbackIn, -42, 1.5), hidden: true, air: false, where: 'the ridge between the switchback legs' },
-    // #11 sits at the bottom of the cinder cone's crater (core/terrain.ts
-    // PLAYGROUNDS 'cone' at [-190, -285]) - the walls are too steep to drive
-    // out, so collecting it means committing to the drop and the breach exit.
-    { position: atWorld(-190, -285, 1.6), hidden: true, air: false, where: 'inside the cinder cone crater' },
-  ]
+/**
+ * Deal a round: 10 shards to fresh random spots + the permanent crater
+ * sentinel. Seeded by the round number, so a round is repeatable but no
+ * two rounds match (and a restart genuinely reshuffles the hunt).
+ */
+function buildShards(round: number): ShardDef[] {
+  const rng = mulberry32(0x5da2d ^ (round * 2654435761))
+  const out: ShardDef[] = []
+
+  // 6 over the road: random spot around the lap, random lane position
+  for (let i = 0; i < 6; i++) {
+    out.push({
+      position: overRoad(rng(), (rng() * 2 - 1) * 3.4, 1.65),
+      hidden: false,
+      air: false,
+      where: 'over the road somewhere - drive the lap',
+    })
+  }
+
+  // 1 high over a random crest jump - airborne or nothing
+  const j = JUMPS[Math.floor(rng() * JUMPS.length) % JUMPS.length]
+  const jt = nearestRoadPoint(j.anchor[0], j.anchor[1]).t
+  out.push({
+    position: overRoad(jt + along(AIR_LEAD), 0, AIR_HEIGHT),
+    hidden: false,
+    air: true,
+    where: 'high over a crest jump',
+  })
+
+  // 1 high over a random geyser - the blast is the ladder
+  const v = VENTS[Math.floor(rng() * VENTS.length) % VENTS.length]
+  out.push({
+    position: atWorld(v.x, v.z, 8.5),
+    hidden: false,
+    air: true,
+    where: 'high over a geyser - ride the blast',
+  })
+
+  // 2 hidden in the open country: rejection-sampled like the crash props -
+  // off the road, on ground flat enough to actually drive to
+  for (let i = 0; i < 2; i++) {
+    let x = 0
+    let z = 0
+    for (let attempt = 0; attempt < 60; attempt++) {
+      x = (rng() * 2 - 1) * 560
+      z = (rng() * 2 - 1) * 560
+      if (Math.hypot(x, z) > 560) continue
+      if (roadDistance(x, z, 25) < 24) continue
+      const e = 3
+      const gx = getTerrainHeight(x + e, z) - getTerrainHeight(x - e, z)
+      const gz = getTerrainHeight(x, z + e) - getTerrainHeight(x, z - e)
+      if (Math.hypot(gx, gz) / (2 * e) > 0.28) continue
+      break
+    }
+    out.push({
+      position: atWorld(x, z, 1.5),
+      hidden: true,
+      air: false,
+      where: 'hidden out in the open country',
+    })
+  }
+
+  // The permanent one: high above the cinder cone's crater. The geyser INSIDE
+  // the crater is the elevator - Nathan + Josh's design, do not reshuffle it.
+  out.push({
+    position: atWorld(-190, -285, 35.6),
+    hidden: true,
+    air: true,
+    where: 'above the cinder cone crater - the crater geyser is the lift',
+  })
+
+  return out
 }
 
-const SHARDS = buildShards()
-const COUNT = SHARDS.length
-
 /** Deterministic phase per shard so they bob and tumble out of sync. */
-const PHASE = SHARDS.map((_, i) => i * 2.399963) // golden angle, radians
+const PHASE = Array.from({ length: COUNT }, (_, i) => i * 2.399963) // golden angle, radians
 
 // ---------- per-frame scratch ----------
 
@@ -147,10 +200,13 @@ export function Delights() {
   const haloRef = useRef<THREE.InstancedMesh>(null)
 
   // alive[i] = still collectable. popT[i] > 0 = playing its pickup animation.
+  // defs is the CURRENT round's layout - redealt when resetTick moves.
   const state = useMemo(
     () => ({
-      alive: SHARDS.map(() => true),
-      popT: SHARDS.map(() => 0),
+      defs: buildShards(0),
+      round: 0,
+      alive: Array.from({ length: COUNT }, () => true),
+      popT: Array.from({ length: COUNT }, () => 0),
       time: 0,
       combo: 0,
       comboLap: 0,
@@ -177,7 +233,14 @@ export function Delights() {
       audio.playChime(state.combo)
       state.combo++
 
-      useGameStore.getState().foundCollectible()
+      // ---- the shard hunt clock ----
+      const store = useGameStore.getState()
+      if (store.collectiblesFound === 0) store.huntStart(performance.now())
+      store.foundCollectible()
+      const after = useGameStore.getState()
+      if (after.collectiblesFound >= COUNT && after.huntStartedAt > 0) {
+        after.huntFinish(performance.now() - after.huntStartedAt)
+      }
     },
     [state]
   )
@@ -188,7 +251,7 @@ export function Delights() {
       radius: PICKUP_RADIUS,
       found: () => useGameStore.getState().collectiblesFound,
       list: () =>
-        SHARDS.map((s, i) => ({
+        state.defs.map((s, i) => ({
           i,
           x: +s.position.x.toFixed(2),
           y: +s.position.y.toFixed(2),
@@ -216,8 +279,18 @@ export function Delights() {
     const time = state.time
     const car = telemetry.carPosition
 
+    // ---- new round? re-deal the hunt ----
+    if (vehicleSignals.resetTick !== state.round) {
+      state.round = vehicleSignals.resetTick
+      state.defs = buildShards(state.round)
+      state.alive.fill(true)
+      state.popT.fill(0)
+      state.combo = 0
+      useGameStore.getState().resetCollectibles()
+    }
+
     for (let i = 0; i < COUNT; i++) {
-      const shard = SHARDS[i]
+      const shard = state.defs[i]
       const phase = PHASE[i]
       const pop = state.popT[i]
 

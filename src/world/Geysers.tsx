@@ -32,9 +32,11 @@ import type { BodyQuery } from './treeSmash'
 
 /** Where the vents live. Exported so the world map can pin them. */
 export const VENTS: readonly { x: number; z: number; phase: number }[] = [
-  { x: -105, z: -388, phase: 0 }, //   beside the south straight - visible from the racing line
-  { x: -148, z: -238, phase: 2.9 }, // on the approach to the cinder cone's breach
-  { x: 305, z: 355, phase: 5.6 }, //   the north pocket, near the double
+  { x: 51, z: -111, phase: 0 }, //   beside the south straight - visible from the racing line
+  { x: -190, z: -285, phase: 2.9 }, // on the approach to the cinder cone's breach
+  { x: 283, z: 375, phase: 5.6 }, //   the north pocket, near the double
+  { x: -700, z: 295, phase: 5.6 }, //   the north pocket, near the double
+
 ]
 
 const PERIOD = 8 //     seconds per full cycle

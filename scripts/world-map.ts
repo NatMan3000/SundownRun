@@ -189,64 +189,31 @@ for (const p of PLAYGROUNDS) {
   })
 }
 
-// Sun shards - mirror of buildShards() in src/world/Delights.tsx (kept tiny and
-// in sync by hand; the map shows where to LOOK, the game owns the truth).
-{
-  const wrap = (t: number) => ((t % 1) + 1) % 1
-  const along = (m: number) => m / roadSpline.getLength()
-  const lateral = (t: number, m: number) => {
-    const tan = roadSpline.getTangentAt(wrap(t))
-    const l = Math.hypot(tan.x, tan.z) || 1
-    return [(tan.z / l) * m, (-tan.x / l) * m]
-  }
-  const at = (t: number, lat: number): [number, number] => {
-    const p = roadSpline.getPointAt(wrap(t))
-    const [ox, oz] = lateral(t, lat)
-    return [p.x + ox, p.z + oz]
-  }
-  const jump1 = nearestRoadPoint(70, -412).t
-  const jump2 = nearestRoadPoint(150, 472).t
-  const hairpin = nearestRoadPoint(8, 168).t
-  const switchbackIn = nearestRoadPoint(190, 172).t
-  const shardDefs: [t: number, lat: number, where: string, hidden: boolean][] = [
-    [0.03, 0, 'south straight, first one you meet', false],
-    [jump1 + along(30), 0, 'in the AIR over crest jump 1 - you have to jump for it', false],
-    [0.15, -3.2, 'turn 1 entry, on the racing line', false],
-    [0.255, 3.4, 'east sweeper, outside line', false],
-    [0.395, 0, 'switchback inbound leg', false],
-    [hairpin + along(6), 24, 'HIDDEN behind the hairpin', true],
-    [0.53, -2.8, 'hairpin exit, inside line', false],
-    [jump2 + along(30), 0, 'in the AIR over crest jump 2', false],
-    [0.815, 3.0, 'west sweeper', false],
-    [switchbackIn, -42, 'HIDDEN on the ridge between the switchback legs', true],
-  ]
-  // #11 is placed by absolute world position (the cinder cone crater)
-  markers.push({
-    x: -190,
-    z: -285,
-    icon: '✦',
-    cls: 'shardHidden',
-    title: 'Sun shard (hidden!)',
-    what: 'One of the 11 collectables: at the bottom of the cinder cone crater. The walls are too steep to drive out - the breach is the only exit.',
-    refs: [
-      { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'inside the cinder cone crater'), label: 'shard #11', note: 'placed at the crater floor by world position' },
-    ],
-  })
-  for (const [t, lat, where, hidden] of shardDefs) {
-    const [x, z] = at(t, lat)
-    markers.push({
-      x,
-      z,
-      icon: '✦',
-      cls: hidden ? 'shardHidden' : 'shard',
-      title: hidden ? 'Sun shard (hidden!)' : 'Sun shard',
-      what: `One of the 10 collectables: ${where}.`,
-      refs: [
-        { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'function buildShards'), label: 'buildShards()', note: 'every shard is placed by road position (0..1 around the lap), so a redrawn track moves the shards with it' },
-      ],
-    })
-  }
-}
+// Sun shards: 10 scatter to fresh random spots every reset (the SHARD HUNT),
+// so they get one roaming note - only the crater sentinel has a fixed pin.
+markers.push({
+  x: 60,
+  z: 40,
+  icon: '✦',
+  cls: 'shard',
+  title: 'Sun shards - the SHARD HUNT',
+  what: 'Ten shards scatter to fresh random spots every reset: six over the road, one high over a crest jump, one high over a geyser (ride the blast up), two hidden in the open country. The hunt clock starts on your first pickup and stops on the last - best time is kept. Press R to deal a new round.',
+  refs: [
+    { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'function buildShards'), label: 'buildShards(round)', note: 'the deal - seeded by the round number, repeatable but never the same twice' },
+    { file: 'src/core/store.ts', line: lineOf('src/core/store.ts', 'huntStartedAt'), label: 'shard hunt clock', note: 'first pickup starts it, last one stops it, best persists' },
+  ],
+})
+markers.push({
+  x: -190,
+  z: -285,
+  icon: '✦',
+  cls: 'shardHidden',
+  title: 'The crater shard (permanent)',
+  what: 'The eleventh shard never moves: it hangs high above the cinder cone crater, and the geyser inside the crater is the elevator. Drop in through the breach, park on the vent, wait for the hiss.',
+  refs: [
+    { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'The permanent one'), label: 'the crater sentinel', note: "Nathan + Josh's design - the one fixed point of the hunt" },
+  ],
+})
 
 // geysers - the volcano is not as asleep as it looks
 {

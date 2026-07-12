@@ -664,6 +664,15 @@ html[data-intro] .trick-board { opacity: 0; }
   color: var(--amber);
 }
 
+.hud-shards__hunt {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  color: var(--amber);
+  opacity: 0.9;
+  min-height: 13px;
+}
+
 /* ---------------- multiplayer panel (under the lap panel) ---------------- */
 
 .hud-mp {

@@ -83,6 +83,7 @@ export function HUD() {
   const gearRef = useRef<HTMLDivElement>(null)
   const clockRef = useRef<HTMLDivElement>(null)
   const countRef = useRef<HTMLDivElement>(null)
+  const huntRef = useRef<HTMLDivElement>(null)
   const toastId = useRef(0)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -125,6 +126,7 @@ export function HUD() {
     let lastGear = -1
     let lastClock = ''
     let lastCount = ''
+    let lastHunt = ''
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
@@ -229,6 +231,22 @@ export function HUD() {
         lastClock = clock
         clockEl.textContent = clock
       }
+
+      // ----- shard hunt clock: runs from first pickup to last -----
+      const huntEl = huntRef.current
+      if (huntEl) {
+        const hs = useGameStore.getState()
+        const hunt =
+          hs.huntStartedAt > 0
+            ? formatLap(now - hs.huntStartedAt)
+            : hs.huntBestMs !== null
+              ? `BEST ${formatLap(hs.huntBestMs)}`
+              : ''
+        if (hunt !== lastHunt) {
+          lastHunt = hunt
+          huntEl.textContent = hunt
+        }
+      }
     }
 
     raf = requestAnimationFrame(tick)
@@ -254,15 +272,15 @@ export function HUD() {
           audio.playVoid()
           showToast('LAP VOID - missed the track!', false, 'void')
         }
-        if (
-          s.collectiblesFound !== prev.collectiblesFound &&
-          s.collectiblesTotal > 0 &&
-          s.collectiblesFound === s.collectiblesTotal
-        ) {
+        // Hunt complete: huntLastMs moves once, on the final pickup, AFTER the
+        // clock has stopped - so this fires exactly once with the right time.
+        if (s.huntLastMs !== prev.huntLastMs && s.huntLastMs !== null) {
+          const ms = s.huntLastMs
+          const newBest = s.huntLastMs === s.huntBestMs
           // let the pickup chime ring before the fanfare lands on top of it
           setTimeout(() => {
             audio.playAllFound()
-            showToast('ALL SHARDS FOUND!', true)
+            showToast(`ALL SHARDS  ${formatLap(ms)}${newBest ? '  NEW BEST!' : ''}`, true)
           }, 280)
         }
       }),
@@ -363,6 +381,7 @@ export function HUD() {
           <i>/{total || 0}</i>
         </div>
         <div className="hud-shards__label">SUN SHARDS</div>
+        <div className="hud-shards__hunt" ref={huntRef} />
       </div>
 
       <div className="hud-speed">
