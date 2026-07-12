@@ -552,9 +552,22 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
       const requestedLong = Math.abs(fLong)
       const mag = Math.hypot(fLong, fLat)
       if (mag > maxF && mag > 1e-4) {
-        const scale = maxF / mag
-        fLong *= scale
-        fLat *= scale
+        if (isRear && brakeCmd > 0.05 && !input.handbrake && engineTotal <= 0) {
+          // FOOTBRAKE EBD. Proportional scaling here was the "braking into a
+          // corner spins me" bug: it stole the rear tyres' cornering grip at
+          // the exact moment the load transfer had already halved it, and the
+          // tail walked out on a driver who only asked to slow down. Street-car
+          // rule instead: the rears keep their LATERAL grip first, and braking
+          // gets whatever budget is left. Fronts stay proportional (a washed-out
+          // front is understeer - safe); the handbrake keeps its lock-up drama.
+          if (Math.abs(fLat) > maxF) fLat = Math.sign(fLat) * maxF
+          const room = Math.sqrt(Math.max(0, maxF * maxF - fLat * fLat))
+          if (Math.abs(fLong) > room) fLong = Math.sign(fLong) * room
+        } else {
+          const scale = maxF / mag
+          fLong *= scale
+          fLat *= scale
+        }
       }
       const availableLong = Math.sqrt(Math.max(0, maxF * maxF - fLat * fLat))
       longClip[i] = clamp((requestedLong - availableLong) / Math.max(availableLong, 500), 0, 1)
@@ -620,9 +633,14 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
 
     // ----- yaw stability: light hand on the tiller; released when the player asks
     //       for a slide, and firmed right up when they have let go mid-slide. -----
+    // CONFIG.stability scales how hard the car catches its own slides - the
+    // deliberate-drift end (yawDampDrift) is left alone so the handbrake still
+    // earns a proper slide at any setting. Live-tunable; raise it if ordinary
+    // cornering keeps swapping ends.
+    const stab = clamp(Number.isFinite(CONFIG.stability) ? CONFIG.stability : 1, 0.4, 2)
     const yawRate = _angvel.dot(_up)
     const yawK = s.drifting
-      ? ASSIST.yawDampDrift + (ASSIST.yawDampRecover - ASSIST.yawDampDrift) * assistGain
+      ? ASSIST.yawDampDrift + (ASSIST.yawDampRecover * stab - ASSIST.yawDampDrift) * assistGain
       : ASSIST.yawDamp
     _rv.x = -_up.x * yawRate * yawK
     _rv.y = -_up.y * yawRate * yawK
@@ -643,9 +661,9 @@ export function useVehiclePhysics({ bodyRef, visualRef, carRef }: VehiclePhysics
         const over = Math.sign(beta) * Math.min(mag - ASSIST.driftDeadband, 1.2)
         const ramp = smoothstep(ASSIST.assistSpeedLo, ASSIST.assistSpeedHi, speed)
         const tq = clamp(
-          -ASSIST.driftRestore * over * assistGain * ramp,
-          -ASSIST.driftRestoreMax,
-          ASSIST.driftRestoreMax
+          -ASSIST.driftRestore * stab * over * assistGain * ramp,
+          -ASSIST.driftRestoreMax * stab,
+          ASSIST.driftRestoreMax * stab
         )
         _rv.x = _up.x * tq
         _rv.y = _up.y * tq

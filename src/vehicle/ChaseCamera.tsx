@@ -129,6 +129,8 @@ export function ChaseCamera() {
     cycleNonce: 0,
     groundY: 0,
     groundTimer: 0,
+    /** heading the orbit follows while airborne - see the spin note below */
+    airFwd: new THREE.Vector3(0, 0, 1),
   }).current
 
   useFrame((state, rawDt) => {
@@ -153,12 +155,30 @@ export function ChaseCamera() {
     _fwd.y = 0
     if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, 1)
     _fwd.normalize()
-    // Default for mount rigs, which never compute an orbit direction. The impact
-    // kick reads it, so it must never be left over from a previous frame.
-    _dir.copy(_fwd)
 
     const speed = Math.hypot(telemetry.carVelocity.x, telemetry.carVelocity.z)
     const speedFrac = Math.min(speed / V_TOP(), 1)
+
+    // ---- airborne: the camera keeps its own head ----
+    // Mid-air the car may be SPINNING for points, and a camera glued to the
+    // nose spins the whole world with it (nausea is a bug - constitution).
+    // While airborne the orbit follows a HELD heading that drifts only toward
+    // the flight direction, so the car tumbles readably inside a steady frame.
+    // On landing _fwd snaps back to the true nose and the springs catch it up.
+    // The bonnet cam is untouched: it is bolted to the chassis on purpose.
+    if (telemetry.airborne) {
+      if (speed > 3) {
+        _vel.set(telemetry.carVelocity.x, 0, telemetry.carVelocity.z).normalize()
+        s.airFwd.lerp(_vel, Math.min(1, dt * 1.2)).normalize()
+      }
+      _fwd.copy(s.airFwd)
+    } else {
+      s.airFwd.copy(_fwd)
+    }
+
+    // Default for mount rigs, which never compute an orbit direction. The impact
+    // kick reads it, so it must never be left over from a previous frame.
+    _dir.copy(_fwd)
 
     // ---- blend the two rigs' TARGETS, not their springs. At ease=0 this is the
     //      old rig exactly, at ease=1 the new one exactly, and the springs smooth
