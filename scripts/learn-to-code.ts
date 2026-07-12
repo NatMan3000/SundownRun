@@ -60,6 +60,8 @@ const html = `<!doctype html>
   nav a { display:flex; gap:8px; align-items:baseline; padding:7px 10px; border-radius:8px;
           color:var(--cream); text-decoration:none; font-size:13px; margin-bottom:2px; }
   nav a:hover { background:rgba(255,179,92,.1); }
+  nav a.active { background:rgba(255,179,92,.16); color:var(--gold); }
+  nav a.active .n { opacity:1; }
   nav a .n { font-family:ui-monospace,monospace; font-size:11px; color:var(--amber); opacity:.8; width:18px; flex:none; }
   nav a .tick { margin-left:auto; color:var(--green); opacity:0; }
   nav a.done .tick { opacity:1; }
@@ -67,7 +69,7 @@ const html = `<!doctype html>
   section { margin-bottom:70px; scroll-margin-top:20px; }
   h2 { color:var(--amber); font-size:24px; margin-bottom:4px; }
   .chip { font-size:11px; letter-spacing:.14em; color:var(--gold); opacity:.7; }
-  p { font-size:15px; line-height:1.65; margin:12px 0; max-width:64ch; }
+  p { font-size:15px; line-height:1.65; margin:12px 0; }
   b { color:var(--gold); }
   .real { background:var(--code); border:1px solid var(--edge); border-radius:10px;
           padding:14px 16px; margin:16px 0; overflow-x:auto; }
@@ -89,7 +91,7 @@ const html = `<!doctype html>
                        border:1px solid var(--edge); }
   .play button:hover { filter:brightness(1.1); }
   textarea { display:block; width:100%; background:var(--code); color:#E8DCC5; border:0;
-             padding:12px 14px; resize:vertical; min-height:100px; outline:none; tab-size:2; }
+             padding:12px 14px; resize:vertical; outline:none; tab-size:2; overflow:hidden; }
   canvas { display:block; width:100%; background:linear-gradient(#3a2f4a 0%, #8a5a3a 55%, #C9A85C 56%, #b8974e 100%); }
   .msg { padding:7px 12px; font:12.5px ui-monospace,monospace; min-height:30px; }
   .msg.err { color:var(--red); } .msg.ok { color:var(--green); }
@@ -458,6 +460,26 @@ sections.forEach((s, i) => {
   if (done[s.id]) a.classList.add('done');
   nav.appendChild(a);
 });
+// scroll-spy: highlight the chapter you are reading
+const navLinks = [...nav.querySelectorAll('a')];
+let activeId = null;
+const setActive = (id) => {
+  if (id === activeId) return;
+  activeId = id;
+  const i = sections.findIndex(s => s.id === id);
+  navLinks.forEach((a, k) => a.classList.toggle('active', k === i));
+};
+const visible = new Map();
+const spy = new IntersectionObserver((entries) => {
+  for (const e of entries) visible.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+  // topmost visible section wins; if none visible (fast scroll), keep the last
+  let best = null;
+  for (const s of sections) if ((visible.get(s.id) || 0) > 0) { best = s.id; break; }
+  if (best) setActive(best);
+}, { rootMargin: '-10% 0px -55% 0px', threshold: [0, 0.05, 0.25] });
+sections.forEach(s => spy.observe(s));
+setActive(sections[0].id);
+
 function markDone(sec) {
   const id = sec.closest('section').id;
   if (done[id]) return;
@@ -501,9 +523,16 @@ document.querySelectorAll('.play').forEach(p => {
   p.querySelector('.run').addEventListener('click', () => { markDone(p); PG[kind].run(api); });
   const rst = p.querySelector('.reset');
   if (rst) rst.addEventListener('click', () => { if (ta) ta.value = initial; PG[kind].reset ? PG[kind].reset(api) : PG[kind].run(api); setMsg(''); });
-  if (ta) ta.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('  ', s, ta.selectionEnd, 'end'); }
-  });
+  if (ta) {
+    // show the whole example - grow with the content, never scroll inside
+    const autosize = () => { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; };
+    ta.addEventListener('input', autosize);
+    requestAnimationFrame(autosize);
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('  ', s, ta.selectionEnd, 'end'); autosize(); }
+    });
+    p.querySelector('.reset').addEventListener('click', () => requestAnimationFrame(autosize));
+  }
   requestAnimationFrame(() => { fit(); PG[kind] && PG[kind].init && PG[kind].init(api); });
 });
 
