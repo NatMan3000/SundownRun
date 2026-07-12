@@ -663,4 +663,56 @@ html[data-intro] .trick-board { opacity: 0; }
   font-size: 15px;
   color: var(--amber);
 }
+
+/* ---------------- multiplayer panel (under the lap panel) ---------------- */
+
+.hud-mp {
+  position: absolute;
+  top: 150px;
+  left: 16px;
+  min-width: 178px;
+  padding: 9px 15px 10px;
+  transition: opacity 300ms ease;
+}
+html[data-intro] .hud-mp { opacity: 0; }
+.hud-mp__label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.hud-mp__status {
+  margin-top: 5px;
+  font-size: 12px;
+  opacity: 0.75;
+  font-style: italic;
+}
+.hud-mp__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+.hud-mp__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  transform: translateY(-1px);
+}
+.hud-mp__name {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hud-mp__stat {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  opacity: 0.85;
+}
+.hud-mp__stat--score { color: var(--amber); }
 `

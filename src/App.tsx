@@ -5,6 +5,9 @@ import { CONFIG } from './core/config'
 import { World } from './world/World'
 import { Vehicle } from './vehicle/Vehicle'
 import { GhostCar } from './vehicle/GhostCar'
+import { mpEnabled } from './net/net'
+import { NetSystem } from './net/NetSystem'
+import { RemoteCars } from './net/RemoteCars'
 import { ChaseCamera } from './vehicle/ChaseCamera'
 import { Lighting } from './fx/Lighting'
 import { Effects } from './fx/Effects'
@@ -27,9 +30,13 @@ export default function App() {
           <Physics timeStep={1 / 60} colliders={false}>
             <World />
             <Vehicle />
+            {/* Other players' cars are kinematic bodies - they need the physics
+                world so ramming works. Mounted only in ?mp=1 sessions. */}
+            {mpEnabled() && <RemoteCars />}
           </Physics>
           {/* Purely visual - no physics body, so it lives OUTSIDE <Physics>. */}
           <GhostCar />
+          {mpEnabled() && <NetSystem />}
           <FxRoot />
           <Delights />
           <Lighting />

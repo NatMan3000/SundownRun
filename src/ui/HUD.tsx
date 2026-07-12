@@ -21,6 +21,8 @@ import { useGameStore } from '../core/store'
 import { LAP } from '../vehicle/tuning'
 import { vehicleSignals } from '../vehicle/vehicleSignals'
 import * as audio from '../audio/AudioEngine'
+import { mpEnabled } from '../net/net'
+import { useNetStore } from '../net/netStore'
 import { HUD_CSS } from './hudStyles'
 import { IntroCard } from './IntroCard'
 import { TrickHud } from './TrickHud'
@@ -70,6 +72,9 @@ export function HUD() {
   const found = useGameStore((s) => s.collectiblesFound)
   const total = useGameStore((s) => s.collectiblesTotal)
   const inputDevice = useGameStore((s) => s.inputDevice)
+
+  const netStatus = useNetStore((s) => s.status)
+  const netPeers = useNetStore((s) => s.peers)
 
   const [toast, setToast] = useState<Toast | null>(null)
   const [hintGone, setHintGone] = useState(false)
@@ -236,6 +241,18 @@ export function HUD() {
     [showToast]
   )
 
+  // ---------- multiplayer join / leave announcements ----------
+  useEffect(
+    () =>
+      useNetStore.subscribe((s, prev) => {
+        if (s.eventNonce !== prev.eventNonce && s.lastEvent) {
+          if (s.lastEvent.kind === 'join') showToast(`${s.lastEvent.name} JOINED THE RUN!`, true)
+          else showToast(`${s.lastEvent.name} LEFT`, false, 'void')
+        }
+      }),
+    [showToast]
+  )
+
   useEffect(() => {
     window.__hud = { store: useGameStore }
     return () => {
@@ -282,6 +299,25 @@ export function HUD() {
           </div>
         </div>
       </div>
+
+      {/* multiplayer roster - only exists in ?mp=1 sessions */}
+      {mpEnabled() && (
+        <div className="hud-panel hud-mp">
+          <div className="hud-mp__label">Multiplayer</div>
+          {netStatus === 'connecting' && <div className="hud-mp__status">connecting…</div>}
+          {netStatus !== 'connecting' && Object.keys(netPeers).length === 0 && (
+            <div className="hud-mp__status">waiting for racers…</div>
+          )}
+          {Object.values(netPeers).map((p) => (
+            <div key={p.id} className="hud-mp__row">
+              <span className="hud-mp__dot" style={{ background: p.color }} />
+              <span className="hud-mp__name">{p.name}</span>
+              <span className="hud-mp__stat">{formatLap(p.bestLapMs)}</span>
+              <span className="hud-mp__stat hud-mp__stat--score">{p.trickScore}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* keyed on `found` so the pop animation replays on every pickup */}
       <div key={found} className="hud-panel hud-shards">

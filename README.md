@@ -88,6 +88,28 @@ steering sensitivity. Both stick between sessions.
 Plug in a Bluetooth Xbox controller and touch any input - the game switches to it
 automatically. Touch the keyboard to switch back.
 
+## Multiplayer - race a mate on two computers
+
+One command on ONE computer (the "host" - both computers need to be on the
+same wifi):
+
+```bash
+bun run mp
+```
+
+It prints two links. Open the first on the host, the second on the other
+computer - that one needs NOTHING installed, the game streams straight from
+the host. Change `name=` in the link to your own name (that's your name tag)
+and add `&color=red` (or any colour) so the cars look different.
+
+You can genuinely SMASH into each other. Ramming your mate off a jump is the
+whole point. If you'd rather drive through each other like ghosts, set
+`multiplayerRam: false` in the knob file. More than two players works too -
+every extra person who opens the link joins the same world.
+
+Windows host note: run the command from the folder in a terminal
+(`bun run mp`), or make a `Multiplayer.bat` with that line in it.
+
 ## Josh: this bit is for you
 
 Open `src/core/config.ts`. Every number in there is a knob - car colour, engine

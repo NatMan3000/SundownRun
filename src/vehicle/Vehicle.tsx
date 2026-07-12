@@ -9,6 +9,7 @@ import { CuboidCollider, RigidBody } from '@react-three/rapier'
 import type { RapierRigidBody } from '@react-three/rapier'
 
 import { getSpawn } from '../core/terrain'
+import { mpEnabled } from '../net/net'
 import { CarBody } from './CarBody'
 import type { CarBodyHandle } from './carVisual'
 import { TempGround } from './TempGround'
@@ -23,7 +24,20 @@ import { useVehiclePhysics } from './useVehiclePhysics'
 const TEMP_GROUND = false
 
 export function Vehicle() {
-  const spawn = useMemo(() => getSpawn(), [])
+  const spawn = useMemo(() => {
+    const s = getSpawn()
+    if (!mpEnabled()) return s
+    // Multiplayer: everyone spawns at the same start line, and the OTHER car is
+    // an immovable kinematic body - two cars materialising in the same spot would
+    // eject one violently. A per-session sideways scatter keeps arrivals apart.
+    const r = (Math.random() - 0.5) * 6
+    return {
+      ...s,
+      position: s.position.clone().add(
+        new THREE.Vector3(Math.cos(s.rotationY) * r, 0, -Math.sin(s.rotationY) * r)
+      ),
+    }
+  }, [])
   const bodyRef = useRef<RapierRigidBody>(null)
   const visualRef = useRef<THREE.Group>(null)
   const carRef = useRef<CarBodyHandle>(null)

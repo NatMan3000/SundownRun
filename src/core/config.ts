@@ -41,6 +41,9 @@ export const CONFIG = {
   ghost: true, //         true = a glowing "ghost" of your best lap races you every lap
   ghostColor: '#FFE7B0', // the ghost's glow - a warm golden spirit by default
   ghostOpacity: 0.34, //  0.15 = barely there, 0.6 = bold. How see-through the ghost is.
+
+  // ---------- MULTIPLAYER (run `bun run mp`, open the links it prints) ----------
+  multiplayerRam: true, // true = you can SMASH into each other, false = drive through like ghosts
 } as const
 
 export type GameConfig = typeof CONFIG
