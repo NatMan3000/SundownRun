@@ -29,7 +29,7 @@ import {
 
 // ---------- terrain height grid (browser renders it to canvas) ----------
 
-const RES = 512
+const RES = 1024
 const heights = new Float32Array(RES * RES)
 let hMin = Infinity
 let hMax = -Infinity
@@ -168,6 +168,7 @@ const pgIcon: Record<string, string> = {
   table: '🛬',
   ramp: '📐',
   bigair: '🪂',
+  cone: '🌋',
 }
 for (const p of PLAYGROUNDS) {
   markers.push({
@@ -219,6 +220,18 @@ for (const p of PLAYGROUNDS) {
     [0.815, 3.0, 'west sweeper', false],
     [switchbackIn, -42, 'HIDDEN on the ridge between the switchback legs', true],
   ]
+  // #11 is placed by absolute world position (the cinder cone crater)
+  markers.push({
+    x: -190,
+    z: -285,
+    icon: '✦',
+    cls: 'shardHidden',
+    title: 'Sun shard (hidden!)',
+    what: 'One of the 11 collectables: at the bottom of the cinder cone crater. The walls are too steep to drive out - the breach is the only exit.',
+    refs: [
+      { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'inside the cinder cone crater'), label: 'shard #11', note: 'placed at the crater floor by world position' },
+    ],
+  })
   for (const [t, lat, where, hidden] of shardDefs) {
     const [x, z] = at(t, lat)
     markers.push({
@@ -231,6 +244,26 @@ for (const p of PLAYGROUNDS) {
       refs: [
         { file: 'src/world/Delights.tsx', line: lineOf('src/world/Delights.tsx', 'function buildShards'), label: 'buildShards()', note: 'every shard is placed by road position (0..1 around the lap), so a redrawn track moves the shards with it' },
       ],
+    })
+  }
+}
+
+// geysers - the volcano is not as asleep as it looks
+{
+  const { VENTS } = await import('../src/world/Geysers')
+  for (const v of VENTS) {
+    markers.push({
+      x: v.x,
+      z: v.z,
+      icon: '♨️',
+      cls: 'jump',
+      title: 'Geyser',
+      what: 'A steam vent that erupts every 8 seconds. The wisps quicken just before it blows - drive onto it at the right moment and it hurls you into the sky (GEYSER LAUNCH, +30, chains into air tricks).',
+      refs: [
+        { file: 'src/world/Geysers.tsx', line: lineOf('src/world/Geysers.tsx', 'export const VENTS'), label: 'VENTS', note: 'each geyser is one line: a position and a phase offset so they take turns' },
+        { file: 'src/core/config.ts', line: lineOf('src/core/config.ts', 'geysers:'), label: 'geysers', note: 'the on/off knob' },
+      ],
+      tryThis: 'Add your own vent to VENTS - click an empty spot on this map for its [x, z].',
     })
   }
 }
