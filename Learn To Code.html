@@ -67,6 +67,9 @@
   .mission code, p code { font:12px ui-monospace,monospace; background:var(--code); color:#E8C99A;
              border-radius:5px; padding:2px 6px; }
   .mission a, .wisdom a { color:#FFCE8A; }
+  .readpill { font:11px ui-monospace,monospace; background:rgba(255,179,92,.12); color:#FFCE8A !important;
+              border-radius:5px; padding:2px 8px; text-decoration:none; margin-left:8px; vertical-align:2px; }
+  .readpill:hover { background:rgba(255,179,92,.25); }
   .hintbox { border-left:3px solid var(--amber); background:rgba(255,179,92,.07);
              padding:8px 12px; border-radius:0 8px 8px 0; font-size:13.5px; margin:12px 0; line-height:1.55; }
 </style>
@@ -393,17 +396,19 @@ boost()</pre>
 <section id="ch11" data-title="Running your game">
   <div class="chip">REFERENCE · KEEP THIS HANDY</div>
   <h2>Running your game - the four buttons</h2>
-  <p>Everything lives in the game folder as double-clickable <b>.bat</b> files (each one is
-  just a small script - the links below open them in VS Code so you can read exactly what
-  they do. Spoiler: no magic, just steps).</p>
+  <p>Everything lives in <a id="folderlink" href="#">the game folder</a> as <b>.bat</b>
+  files - the same folder this page lives in. You run one by <b>double-clicking it in that
+  folder</b> - not from this page (browsers are not allowed to start programs on your
+  computer, which is honestly for the best). The little <i>read the script</i> pills open
+  each one in VS Code, because none of them are magic - just steps you can read.</p>
 
-  <div class="mission"><div class="lvl">PLAY</div><h4><a data-file="Sundown Run.bat" data-line="1">Sundown Run.bat</a></h4>
+  <div class="mission"><div class="lvl">PLAY</div><h4>Sundown Run.bat <a class="readpill" data-file="Sundown Run.bat" data-line="1">read the script</a></h4>
   <p>Starts the game at <code>http://localhost:5199</code>. First ever run installs what it
   needs (takes a minute); after that it starts in seconds. Close the black window to stop.
   While it runs, every file you save updates the game instantly - that is how all the
   missions work.</p></div>
 
-  <div class="mission"><div class="lvl">MULTIPLAYER</div><h4><a data-file="Sundown Run Multiplayer.bat" data-line="1">Sundown Run Multiplayer.bat</a></h4>
+  <div class="mission"><div class="lvl">MULTIPLAYER</div><h4>Sundown Run Multiplayer.bat <a class="readpill" data-file="Sundown Run Multiplayer.bat" data-line="1">read the script</a></h4>
   <p>Only ONE computer runs this - the host. It prints two links: one for the host, one for
   everyone else on the wifi. Friends need NOTHING installed - the game streams straight off
   the host's machine into their browser. First run asks for one admin YES (that is the
@@ -413,12 +418,12 @@ boost()</pre>
   up: everyone plays with the HOST's <code>config.ts</code> - your knob tweaks apply to the
   whole lobby.</p></div>
 
-  <div class="mission"><div class="lvl">MAP</div><h4><a data-file="Sundown Run Map Gen.bat" data-line="1">Sundown Run Map Gen.bat</a></h4>
+  <div class="mission"><div class="lvl">MAP</div><h4>Sundown Run Map Gen.bat <a class="readpill" data-file="Sundown Run Map Gen.bat" data-line="1">read the script</a></h4>
   <p>Rebuilds <code>World Map.html</code> from the game code and opens it. Run it after you
   change the world - new playground, new geyser, new banked corner - so the map shows what
   you built (your creation gets its own clickable marker, automatically).</p></div>
 
-  <div class="mission"><div class="lvl">UPDATE / DO-OVER</div><h4><a data-file="Sundown Run Update.bat" data-line="1">Sundown Run Update.bat</a></h4>
+  <div class="mission"><div class="lvl">UPDATE / DO-OVER</div><h4>Sundown Run Update.bat <a class="readpill" data-file="Sundown Run Update.bat" data-line="1">read the script</a></h4>
   <p>Downloads the newest official version and resets the folder to a perfect fresh copy.
   <b>It deletes your local changes</b> - that is its whole job. In the official folder it is
   the update button; in YOUR folder (<code>SundownRun-Josh</code>) it is the big red do-over
@@ -438,6 +443,15 @@ const GH = 'https://github.com/NatMan3000/SundownRun/blob/main/';
 const fileRoot = location.protocol === 'file:'
   ? decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '')
   : null;
+// "the game folder": this page lives in it, so its own URL minus the filename
+// IS the folder. A file:// folder link opens the browser's file listing (not
+// Explorer - pages cannot do that), which shows where everything lives.
+const fl = document.getElementById('folderlink');
+if (fl && location.protocol === 'file:') {
+  fl.href = location.href.replace(/\/[^/]*$/, '/');
+} else if (fl) {
+  fl.href = GH.replace(/blob\/main\/$/, '');
+}
 document.querySelectorAll('a[data-file]').forEach(a => {
   const f = a.dataset.file, l = a.dataset.line;
   a.href = fileRoot ? 'vscode://file' + fileRoot + '/' + f + ':' + l : GH + f + '#L' + l;
