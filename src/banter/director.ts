@@ -26,6 +26,7 @@ import { useGameStore } from '../core/store'
 import { RECENT_SIZE, tricksState } from '../core/tricks'
 import { formatLap } from '../ui/format'
 import { gateLine } from './gate'
+import { playVoice, speaking } from './radioAudio'
 import type { MainToWorker, Style, WorkerToMain } from './protocol'
 
 // ---------- scheduling constants ----------
@@ -63,6 +64,14 @@ export function banterEnabled(): boolean {
 
 const stress = (): boolean => urlParam('djstress') === '1'
 
+/** Voice is a layer on top of banter - never on in stress runs (perf probe). */
+function voiceEnabled(): boolean {
+  if (stress()) return false
+  if (urlParam('djvoice') === '0') return false
+  if (urlParam('djvoice') === '1') return true
+  return CONFIG.radioVoice
+}
+
 // ---------- observable state (BanterHud polls this - mutate, never replace) ----------
 
 export type BanterStatus = 'idle' | 'loading' | 'warm' | 'unavailable'
@@ -78,6 +87,14 @@ export const banterState = {
   /** Who said the current line - drives the chip's name tag + accent. */
   speaker: '',
   speakerId: 'max',
+  /** The hosts' actual voices (Supertonic TTS in the same worker). */
+  voice: 'off' as 'off' | 'loading' | 'warm' | 'unavailable',
+}
+
+/** Voice preset + delivery speed per host - Max talks fast, Cinder does not hurry. */
+const HOST_VOICES: Record<string, { id: string; speed: number }> = {
+  max: { id: CONFIG.djVoiceMax, speed: 1.12 },
+  cinder: { id: CONFIG.djVoiceCinder, speed: 0.95 },
 }
 
 // CALDERA FM has two hosts; the director routes each moment to the voice it
@@ -123,6 +140,8 @@ const stats = {
   requested: 0,
   completed: 0,
   shown: 0,
+  spoken: 0,
+  speechFailed: 0,
   gateRejected: 0,
   genFailed: 0,
   expired: 0,
@@ -190,6 +209,10 @@ let inFlightEvent = ''
 let inFlightPersona = 'max'
 let inFlightStyle: Style = 'standard'
 let genId = 0
+/** A gated line waiting on its voice clip before it shows. */
+let pendingSpeech: { text: string; personaId: string } | null = null
+let pendingSpeechAt = 0
+const SPEECH_TIMEOUT_MS = 15000
 let pending: Pending | null = null
 let lastLineAt = 0
 let greeted = false
@@ -391,6 +414,7 @@ function maybeDispatch(now: number): void {
   }
 
   if (introUp()) return
+  if (speaking()) return // a host is mid-sentence - nobody interrupts on this station
 
   if (!greeted) {
     greeted = true
@@ -435,7 +459,6 @@ function onWorkerMessage(e: MessageEvent): void {
       worker = null
       break
     case 'line': {
-      inFlight = false
       stats.completed++
       lastLineAt = performance.now()
       const shown = gateLine(m.text, inFlightStyle)
@@ -451,16 +474,21 @@ function onWorkerMessage(e: MessageEvent): void {
           tokens: m.tokens,
           tps: m.tps,
         })
-      if (shown) {
-        stats.shown++
-        banterState.line = shown
-        banterState.lineNonce++
-        banterState.lineShownAt = lastLineAt
-        banterState.speaker = PERSONA_NAMES[inFlightPersona] ?? PERSONA_NAMES.max
-        banterState.speakerId = inFlightPersona
-        noteOpener(shown)
-      } else {
+      if (!shown) {
+        inFlight = false
         stats.gateRejected++
+        break
+      }
+      if (banterState.voice === 'warm') {
+        // Hold the chip until the clip is synthesised - text and voice land
+        // together, radio-style. inFlight stays true so nothing else queues.
+        pendingSpeech = { text: shown, personaId: inFlightPersona }
+        pendingSpeechAt = performance.now()
+        const v = HOST_VOICES[inFlightPersona] ?? HOST_VOICES.max
+        send({ type: 'speak', id: ++genId, text: shown, voice: v.id, speed: v.speed })
+      } else {
+        inFlight = false
+        showLine(shown, inFlightPersona)
       }
       break
     }
@@ -469,7 +497,46 @@ function onWorkerMessage(e: MessageEvent): void {
       stats.genFailed++
       console.warn(`[banter] generation failed: ${m.message}`)
       break
+    case 'voiceready':
+      banterState.voice = 'warm'
+      console.info(`[banter] voice warm - TTS load+warmup ${m.loadMs}ms`)
+      break
+    case 'voiceunavailable':
+      banterState.voice = 'unavailable'
+      console.info(`[banter] voice unavailable (text banter unaffected): ${m.reason}`)
+      break
+    case 'speech': {
+      inFlight = false
+      const p = pendingSpeech
+      pendingSpeech = null
+      if (!p) break
+      const durationMs = playVoice(m.audio, m.sampleRate)
+      if (durationMs > 0) stats.spoken++
+      showLine(p.text, p.personaId)
+      // Cooldown counts from the END of the clip - hosts never talk over themselves.
+      lastLineAt = performance.now() + durationMs
+      break
+    }
+    case 'speechfail': {
+      inFlight = false
+      stats.speechFailed++
+      const p = pendingSpeech
+      pendingSpeech = null
+      if (p) showLine(p.text, p.personaId)
+      console.warn(`[banter] speech failed (line shown text-only): ${m.message}`)
+      break
+    }
   }
+}
+
+function showLine(text: string, personaId: string): void {
+  stats.shown++
+  banterState.line = text
+  banterState.lineNonce++
+  banterState.lineShownAt = performance.now()
+  banterState.speaker = PERSONA_NAMES[personaId] ?? PERSONA_NAMES.max
+  banterState.speakerId = personaId
+  noteOpener(text)
 }
 
 // ---------- the loop ----------
@@ -484,6 +551,15 @@ function tick(now: number): void {
     const b =
       banterState.status === 'loading' ? buckets.load : inFlight ? buckets.gen : buckets.idle
     if (b.n < SAMPLE_CAP) b.arr[b.n++] = delta
+  }
+
+  // Watchdog: a speak request that never comes back must not wedge banter.
+  if (pendingSpeech && now - pendingSpeechAt > SPEECH_TIMEOUT_MS) {
+    const p = pendingSpeech
+    pendingSpeech = null
+    inFlight = false
+    stats.speechFailed++
+    showLine(p.text, p.personaId)
   }
 
   pollTricks(now)
@@ -565,8 +641,10 @@ export function startBanter(): void {
 
   worker = new Worker(new URL('./banter.worker.ts', import.meta.url), { type: 'module' })
   worker.addEventListener('message', onWorkerMessage)
-  send({ type: 'load' })
+  const voice = voiceEnabled()
+  send({ type: 'load', voice })
   banterState.status = 'loading'
+  banterState.voice = voice ? 'loading' : 'off'
   installDevHook()
   raf = requestAnimationFrame(tick)
   void raf

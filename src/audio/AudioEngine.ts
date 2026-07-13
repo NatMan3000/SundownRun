@@ -388,6 +388,19 @@ export function installGestureUnlock(): () => void {
   return remove
 }
 
+/**
+ * CALDERA FM pulls the game mix down a touch while a host is talking, so the
+ * voice reads over the engine at speed. The visibility handler below may
+ * override an active duck (it hard-targets 0 / MASTER_VOL) - acceptable: a
+ * tab switch mid-line just ends the duck early.
+ */
+export function duckForRadio(on: boolean): void {
+  const g = G
+  if (!g || hidden) return
+  const t = g.ctx.currentTime
+  g.master.gain.setTargetAtTime(on ? MASTER_VOL * 0.55 : MASTER_VOL, t, 0.12)
+}
+
 /** A backgrounded tab must not scream. Ramp to silence, then park the context. */
 export function setHidden(next: boolean): void {
   hidden = next

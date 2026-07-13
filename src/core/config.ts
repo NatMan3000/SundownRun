@@ -54,6 +54,10 @@ export const CONFIG = {
   //                     graphics card. Nothing leaves your computer. The first switch-on
   //                     downloads the AI brain (about 3GB, one time only, then it is saved).
   //                     If the game ever stutters with them on, just turn it back off.
+  radioVoice: true, //   the hosts actually TALK through a car-radio speaker (needs radioDj on).
+  //                     First switch-on downloads their voice box (~260MB, one time).
+  djVoiceMax: 'M2', //    Magma Max's voice - try 'M1' to 'M5' (male) or 'F1' to 'F5' (female)
+  djVoiceCinder: 'M5', // Doc Cinder's voice - mix and match until they sound right!
 } as const
 
 export type GameConfig = typeof CONFIG

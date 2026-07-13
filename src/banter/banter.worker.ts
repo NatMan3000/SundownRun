@@ -14,11 +14,16 @@
 //  the download happens once per machine, not once per session.
 // ============================================================
 
-import { AutoModelForCausalLM, AutoTokenizer, TextStreamer, env } from '@huggingface/transformers'
+import { AutoModelForCausalLM, AutoTokenizer, TextStreamer, env, pipeline } from '@huggingface/transformers'
 import type { MainToWorker, Style, WorkerToMain } from './protocol'
 
 const MODEL_ID = 'onnx-community/gemma-4-E2B-it-ONNX'
 const DTYPE = 'q4f16'
+
+// The hosts' voice box: Supertonic TTS 2 (~262MB, fp32, WebGPU), natively
+// supported by transformers.js. Ships 10 voice presets (M1-M5, F1-F5) as
+// 128-dim style embeddings - one fetch per voice, cached below.
+const TTS_ID = 'onnx-community/Supertonic-TTS-2-ONNX'
 
 /** Token budget per delivery style - crazytown needs room to ramble. */
 const STYLE_TOKENS: Record<string, number> = { 'one-word': 8, standard: 28, crazytown: 48 }
@@ -112,6 +117,20 @@ let tokenizer: Tokenizer | null = null
 let model: Model | null = null
 let busy = false
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let tts: any = null
+const voiceStyles = new Map<string, Float32Array>()
+
+async function loadVoiceStyle(voice: string): Promise<Float32Array> {
+  const cached = voiceStyles.get(voice)
+  if (cached) return cached
+  const res = await fetch(`https://huggingface.co/${TTS_ID}/resolve/main/voices/${voice}.bin`)
+  if (!res.ok) throw new Error(`voice ${voice} fetch failed: ${res.status}`)
+  const style = new Float32Array(await res.arrayBuffer())
+  voiceStyles.set(voice, style)
+  return style
+}
+
 // ---------- download progress, aggregated across weight files ----------
 
 const fileProgress = new Map<string, { loaded: number; total: number }>()
@@ -139,7 +158,7 @@ function onProgress(p: { status?: string; file?: string; loaded?: number; total?
 
 // ---------- load ----------
 
-async function load(): Promise<void> {
+async function load(voice: boolean): Promise<void> {
   if (!('gpu' in navigator)) {
     post({ type: 'unavailable', reason: 'no WebGPU in this browser' })
     return
@@ -163,7 +182,36 @@ async function load(): Promise<void> {
     post({ type: 'ready', loadMs: Math.round(loaded - t0), warmupMs: Math.round(t1 - loaded) })
   } catch (e) {
     post({ type: 'unavailable', reason: e instanceof Error ? e.message : String(e) })
+    return
   }
+
+  // The voice box loads AFTER the brain is on air - text banter works the
+  // whole time, speech simply joins in when warm. A TTS failure costs the
+  // voice, never the feature.
+  if (!voice) return
+  const tv0 = performance.now()
+  try {
+    tts = await pipeline('text-to-speech', TTS_ID, { device: 'webgpu' })
+    // Warm the TTS shader pipelines the same way the LLM warms its own.
+    const style = await loadVoiceStyle('M2')
+    await tts('<en>Radio check.</en>', { speaker_embeddings: style, num_inference_steps: 5, speed: 1.05 })
+    post({ type: 'voiceready', loadMs: Math.round(performance.now() - tv0) })
+  } catch (e) {
+    tts = null
+    post({ type: 'voiceunavailable', reason: e instanceof Error ? e.message : String(e) })
+  }
+}
+
+// ---------- speak ----------
+
+async function runSpeak(text: string, voice: string, speed: number): Promise<{ audio: Float32Array; sampleRate: number }> {
+  const style = await loadVoiceStyle(voice)
+  const out = await tts(`<en>${text}</en>`, {
+    speaker_embeddings: style,
+    num_inference_steps: 5,
+    speed,
+  })
+  return { audio: out.audio as Float32Array, sampleRate: out.sampling_rate as number }
 }
 
 // ---------- generate ----------
@@ -229,7 +277,7 @@ async function runGenerate(event: string, maxTokens: number, persona: Persona): 
 self.addEventListener('message', (e: MessageEvent) => {
   const msg = e.data as MainToWorker
   if (msg.type === 'load') {
-    void load()
+    void load(msg.voice)
     return
   }
   if (msg.type === 'generate') {
@@ -243,6 +291,35 @@ self.addEventListener('message', (e: MessageEvent) => {
       .then((r) => post({ type: 'line', id: msg.id, ...r }))
       .catch((err) =>
         post({ type: 'genfail', id: msg.id, message: err instanceof Error ? err.message : String(err) })
+      )
+      .finally(() => {
+        busy = false
+      })
+    return
+  }
+  if (msg.type === 'speak') {
+    if (!tts || busy) {
+      post({ type: 'speechfail', id: msg.id, message: busy ? 'busy' : 'no voice' })
+      return
+    }
+    busy = true
+    const t0 = performance.now()
+    runSpeak(msg.text, msg.voice, msg.speed)
+      .then((r) => {
+        const reply: WorkerToMain = {
+          type: 'speech',
+          id: msg.id,
+          audio: r.audio,
+          sampleRate: r.sampleRate,
+          synthMs: Math.round(performance.now() - t0),
+        }
+        // Transfer the PCM buffer - no copy on a multi-second 44.1kHz clip.
+        ;(self as unknown as { postMessage(v: unknown, t: Transferable[]): void }).postMessage(reply, [
+          r.audio.buffer as ArrayBuffer,
+        ])
+      })
+      .catch((err) =>
+        post({ type: 'speechfail', id: msg.id, message: err instanceof Error ? err.message : String(err) })
       )
       .finally(() => {
         busy = false

@@ -14,8 +14,9 @@
 export type Style = 'one-word' | 'standard' | 'crazytown'
 
 export type MainToWorker =
-  | { type: 'load' }
+  | { type: 'load'; voice: boolean }
   | { type: 'generate'; id: number; event: string; persona: string; style: Style }
+  | { type: 'speak'; id: number; text: string; voice: string; speed: number }
 
 export type WorkerToMain =
   | { type: 'progress'; loadedMB: number; totalMB: number; pct: number }
@@ -35,3 +36,7 @@ export type WorkerToMain =
       tps: number
     }
   | { type: 'genfail'; id: number; message: string }
+  | { type: 'voiceready'; loadMs: number }
+  | { type: 'voiceunavailable'; reason: string }
+  | { type: 'speech'; id: number; audio: Float32Array; sampleRate: number; synthMs: number }
+  | { type: 'speechfail'; id: number; message: string }
