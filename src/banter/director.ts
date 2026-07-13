@@ -189,6 +189,16 @@ let topSpeedCalled = false
 let lastMildTrickAt = -Infinity
 const MILD_TRICK_GAP_MS = 45000
 
+/**
+ * Not every landing deserves airtime (Nathan direction, 2026-07-14: roughly
+ * one in five trick landings, and the bigger the moment the more likely the
+ * hosts pick it up). Each candidate trick landing rolls against its HEAT
+ * tier; crashes roll their own smaller chance. Rare one-off moments (new
+ * best lap, all shards, top speed, the greeting) always play.
+ */
+const TRICK_CHANCE: Record<Heat, number> = { mild: 0.08, solid: 0.2, wild: 0.65 }
+const CRASH_CHANCE = 0.25
+
 const STRESS_EVENTS = [
   'landed BACKFLIP, 250 points, at 78 km/h | HEAT: solid',
   'WIPEOUT - crashed and lost 6400 points | HEAT: wild',
@@ -256,7 +266,7 @@ function pollTricks(now: number): void {
     }
     if (!best || prio >= best.prio) best = { prio, heat, text, at: now }
   }
-  if (best) {
+  if (best && Math.random() < TRICK_CHANCE[best.heat]) {
     if (best.heat === 'mild') lastMildTrickAt = now
     offer(best.prio, best.heat, best.text, now)
   }
@@ -294,7 +304,8 @@ function pollTelemetry(now: number): void {
   // Hard crash - edge-triggered off the impact envelope the camera kick uses.
   if (impactArmed && telemetry.impact >= 0.65) {
     impactArmed = false
-    offer(2, 'solid', `a big crash - slammed into something hard at ${Math.round(telemetry.speedKmh)} km/h`, now)
+    if (Math.random() < CRASH_CHANCE)
+      offer(2, 'solid', `a big crash - slammed into something hard at ${Math.round(telemetry.speedKmh)} km/h`, now)
   } else if (!impactArmed && telemetry.impact < 0.15) {
     impactArmed = true
   }
