@@ -618,6 +618,19 @@ function installDevHook(): void {
   }
 }
 
+// Dev-only HMR hygiene. When an edit re-instantiates this module, the OLD
+// instance's worker, rAF loop and audio kept running with nobody in charge -
+// the two-hosts-talking-over-each-other bug from live testing (2026-07-14,
+// Nathan heard a ghost DJ speaking lines from a previous code version).
+// dispose() executes on the outgoing instance and shuts its broadcast down.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    worker?.terminate()
+    worker = null
+    cancelAnimationFrame(raf)
+  })
+}
+
 /**
  * Idempotent - BanterHud calls this on mount. The worker and model survive
  * for the page's lifetime once started; a 3GB model is not something to

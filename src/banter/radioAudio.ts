@@ -50,6 +50,21 @@ function graph(): GainNode | null {
   }
 }
 
+// Same HMR rule as director.ts: an orphaned instance of this module keeps an
+// AudioContext (and possibly a playing clip) alive with nobody controlling it.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    try {
+      current?.stop()
+    } catch {
+      // already stopped
+    }
+    void ctx?.close()
+    ctx = null
+    out = null
+  })
+}
+
 /** True while a clip is playing - the director holds new dispatches meanwhile. */
 export function speaking(): boolean {
   return performance.now() < speakingUntilMs
