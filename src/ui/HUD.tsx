@@ -26,6 +26,7 @@ import { useNetStore } from '../net/netStore'
 import { HUD_CSS } from './hudStyles'
 import { IntroCard } from './IntroCard'
 import { TrickHud } from './TrickHud'
+import { BanterHud } from '../banter/BanterHud'
 import { formatLap } from './format'
 
 /** Text writes per second. The eye cannot read a 60Hz speedo anyway. */
@@ -459,6 +460,10 @@ export function HUD() {
       </div>
 
       <TrickHud />
+
+      {/* CALDERA FM - the in-browser AI radio DJ. Gated on CONFIG.radioDj
+          (and WebGPU); renders nothing at all when off or unsupported. */}
+      <BanterHud />
 
       <IntroCard />
     </div>

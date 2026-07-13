@@ -93,6 +93,8 @@ declare global {
       warmupMs?: number
       /** Length of the measured window. */
       windowMs?: number
+      /** Elapsed seconds when recording actually began (late when ?djwait=1 held it). */
+      recStartS?: number
     }
   }
 }

@@ -46,6 +46,13 @@ export const CONFIG = {
 
   // ---------- MULTIPLAYER (run `bun run mp`, open the links it prints) ----------
   multiplayerRam: true, // true = you can SMASH into each other, false = drive through like ghosts
+
+  // ---------- RADIO DJ (a real AI lives in your browser!) ----------
+  radioDj: false, //     true = Magma Max on CALDERA FM calls out YOUR tricks, crashes and lap
+  //                     records - his lines are invented live by a small AI running on your
+  //                     graphics card. Nothing leaves your computer. The first switch-on
+  //                     downloads his brain (about 3GB, one time only, then it is saved).
+  //                     If the game ever stutters with him on, just turn him back off.
 } as const
 
 export type GameConfig = typeof CONFIG

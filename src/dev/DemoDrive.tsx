@@ -111,12 +111,17 @@ function param(name: string): string | null {
 export function DemoDrive() {
   const active = useRef(param('demo') === '1').current
   const cutting = useRef(param('cut') === '1').current
+  // ?djwait=1 - hold the recording window until the banter model reports warm,
+  // so a banter-on perf run measures generation, not download + shader compile.
+  // If banter never warms the window never opens - it is a dev-only switch.
+  const waitDj = useRef(param('djwait') === '1').current
   const s = useRef({
     elapsed: 0,
     t: 0,
     resync: 0,
     prevErr: 0,
     n: 0,
+    recStart: -1,
     finished: false,
     stuckMs: 0,
     unstickMs: 0,
@@ -141,7 +146,14 @@ export function DemoDrive() {
       const cost = performance.now() - now
       const delta = lastNow === 0 ? 0 : now - lastNow
       lastNow = now
-      if (!s.finished && s.elapsed > WARMUP_S && delta > 0 && s.n < MAX_FRAMES) {
+      if (
+        !s.finished &&
+        s.elapsed > WARMUP_S &&
+        delta > 0 &&
+        s.n < MAX_FRAMES &&
+        (!waitDj || window.__banter?.warm === true)
+      ) {
+        if (s.recStart < 0) s.recStart = s.elapsed
         costs[s.n] = cost
         deltas[s.n] = delta
         s.n++
@@ -159,7 +171,8 @@ export function DemoDrive() {
     if (!active) return
     s.elapsed += dt
 
-    if (!s.finished && (s.elapsed > WARMUP_S + RECORD_S || s.n >= MAX_FRAMES)) finalise(s.n)
+    if (!s.finished && ((s.recStart >= 0 && s.elapsed > s.recStart + RECORD_S) || s.n >= MAX_FRAMES))
+      finalise(s.n)
 
     // ---------- where are we on the road ----------
     const pos = telemetry.carPosition
@@ -247,6 +260,7 @@ export function DemoDrive() {
     perf.vsyncLocked = delta.avg > 16.3 && delta.avg < 17.1
     perf.warmupMs = WARMUP_S * 1000
     perf.windowMs = RECORD_S * 1000
+    perf.recStartS = s.recStart
 
     console.info(
       `[perf] ${n} frames over ${RECORD_S}s | cost avg ${cost.avg.toFixed(2)}ms p99 ${cost.p99.toFixed(2)}ms | ` +
