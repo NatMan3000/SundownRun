@@ -48,11 +48,12 @@ export const CONFIG = {
   multiplayerRam: true, // true = you can SMASH into each other, false = drive through like ghosts
 
   // ---------- RADIO DJ (a real AI lives in your browser!) ----------
-  radioDj: false, //     true = Magma Max on CALDERA FM calls out YOUR tricks, crashes and lap
-  //                     records - his lines are invented live by a small AI running on your
+  radioDj: false, //     true = CALDERA FM switches on: Magma Max (the hype man) and Doc Cinder
+  //                     (a very unimpressed scientist) call out YOUR tricks, crashes and lap
+  //                     records - their lines are invented live by a small AI running on your
   //                     graphics card. Nothing leaves your computer. The first switch-on
-  //                     downloads his brain (about 3GB, one time only, then it is saved).
-  //                     If the game ever stutters with him on, just turn him back off.
+  //                     downloads the AI brain (about 3GB, one time only, then it is saved).
+  //                     If the game ever stutters with them on, just turn it back off.
 } as const
 
 export type GameConfig = typeof CONFIG

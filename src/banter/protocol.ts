@@ -8,7 +8,7 @@
 
 export type MainToWorker =
   | { type: 'load' }
-  | { type: 'generate'; id: number; event: string }
+  | { type: 'generate'; id: number; event: string; persona: string }
 
 export type WorkerToMain =
   | { type: 'progress'; loadedMB: number; totalMB: number; pct: number }

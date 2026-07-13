@@ -92,6 +92,10 @@ Main chunk: zero transformers.js references (verified by grep on the built outpu
 4. **Voice.** The obvious next wonder-moment: pipe gated lines through Web Speech or a small local TTS so the radio actually talks. Unexplored.
 5. **Prefill could be cached.** ~260ms of each line is re-prefilling the same persona prompt. transformers.js does not expose KV reuse cleanly today; at current line rates it is not worth chasing.
 
+## Addendum (2026-07-14, same session): two hosts
+
+Nathan's direction after playing: the commentary should switch between personas, each with its own flavour. Built: CALDERA FM now has **Magma Max** (the hype man) and **Doc Cinder** (a deadpan volcano scientist, cinder-cone canon). The HEAT tier routes the speaker - wild moments go mostly to Max, mild ones mostly to Cinder, with deliberate crossover so an occasional bone-dry line lands on a huge trick. Each persona has its own system prompt and few-shot set (same shared rulebook); the chip names the speaker with a per-host accent colour (Max amber, Cinder a cool `#A9C6BF`). Zero perf cost - every line re-prefills its prompt anyway. First organic Cinder line, reacting to a real 2-point timber tap: "Timber settled. Standard procedure for that sequence."
+
 ## For the Josh playtest (not machine-verifiable)
 
 - **Is it funny?** 12-year-old laughter is the only meaningful eval. Watch whether he clocks that the DJ is talking about *his* specific trick - that recognition is the wonder moment the spike was for.

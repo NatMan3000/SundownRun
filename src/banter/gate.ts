@@ -50,7 +50,7 @@ export function gateLine(raw: string): string | null {
 
   // First line only, minus any self-labelling the model added.
   s = s.split('\n')[0].trim()
-  s = s.replace(/^\s*(magma max|dj|caldera fm|radio)\s*[:>-]\s*/i, '')
+  s = s.replace(/^\s*(magma max|doc cinder|cinder|dj|caldera fm|radio)\s*[:>-]\s*/i, '')
 
   // Strip markdown furniture and normalise typography.
   s = s.replace(/[*_`#~]/g, '')

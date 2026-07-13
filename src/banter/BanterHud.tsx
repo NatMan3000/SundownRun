@@ -47,6 +47,9 @@ html[data-intro] .banter-chip { opacity: 0; }
   color: var(--amber, #FFB35C);
   margin-bottom: 3px;
 }
+/* Doc Cinder speaks in a cooler accent than Max's amber - two hosts, one station. */
+.banter-chip--cinder .banter-chip__eyebrow { color: #A9C6BF; }
+.banter-chip__station { opacity: 0.55; font-weight: 400; }
 .banter-chip__line { display: block; font-size: 15px; line-height: 1.35; }
 .banter-chip--in { animation: banter-in 260ms ease both; }
 .banter-chip--out { opacity: 0; }
@@ -59,6 +62,8 @@ html[data-intro] .banter-chip { opacity: 0; }
 interface LineView {
   nonce: number
   line: string
+  speaker: string
+  speakerId: string
   phase: 'in' | 'out'
 }
 
@@ -85,15 +90,19 @@ function BanterHudInner() {
       setStatus((prev) => (prev === banterState.status ? prev : banterState.status))
       setPct((prev) => (prev === banterState.pct ? prev : banterState.pct))
 
-      const { line, lineNonce, lineShownAt } = banterState
+      const { line, lineNonce, lineShownAt, speaker, speakerId } = banterState
       setView((prev) => {
         if (!line || lineShownAt === 0) return prev === null ? prev : null
         const age = performance.now() - lineShownAt
         const hold = HOLD_BASE_MS + HOLD_PER_CHAR_MS * line.length
         if (age < hold)
-          return prev?.nonce === lineNonce && prev.phase === 'in' ? prev : { nonce: lineNonce, line, phase: 'in' }
+          return prev?.nonce === lineNonce && prev.phase === 'in'
+            ? prev
+            : { nonce: lineNonce, line, speaker, speakerId, phase: 'in' }
         if (age < hold + FADE_MS)
-          return prev?.nonce === lineNonce && prev.phase === 'out' ? prev : { nonce: lineNonce, line, phase: 'out' }
+          return prev?.nonce === lineNonce && prev.phase === 'out'
+            ? prev
+            : { nonce: lineNonce, line, speaker, speakerId, phase: 'out' }
         return prev === null ? prev : null
       })
     }
@@ -110,8 +119,14 @@ function BanterHudInner() {
         </div>
       )}
       {status === 'warm' && view && (
-        <div key={view.nonce} className={`hud-panel banter-chip banter-chip--${view.phase}`}>
-          <span className="banter-chip__eyebrow">CALDERA FM</span>
+        <div
+          key={view.nonce}
+          className={`hud-panel banter-chip banter-chip--${view.phase} banter-chip--${view.speakerId}`}
+        >
+          <span className="banter-chip__eyebrow">
+            {(view.speaker || 'Magma Max').toUpperCase()}
+            <span className="banter-chip__station"> · CALDERA FM</span>
+          </span>
           <span className="banter-chip__line">{view.line}</span>
         </div>
       )}

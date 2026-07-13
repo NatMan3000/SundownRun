@@ -75,12 +75,30 @@ export const banterState = {
   line: null as string | null,
   lineNonce: 0,
   lineShownAt: 0,
+  /** Who said the current line - drives the chip's name tag + accent. */
+  speaker: '',
+  speakerId: 'max',
+}
+
+// CALDERA FM has two hosts; the director routes each moment to the voice it
+// suits (Nathan direction, 2026-07-14: personas switch, each with a flavour).
+// Max is the hype man, Doc Cinder the deadpan scientist - so wild moments
+// mostly go to Max, mild ones mostly to Cinder, with enough crossover that
+// an occasional bone-dry line lands on a huge trick (where deadpan is best).
+const PERSONA_NAMES: Record<string, string> = { max: 'Magma Max', cinder: 'Doc Cinder' }
+
+function pickPersona(heat: Heat): string {
+  const r = Math.random()
+  if (heat === 'wild') return r < 0.8 ? 'max' : 'cinder'
+  if (heat === 'mild') return r < 0.75 ? 'cinder' : 'max'
+  return r < 0.55 ? 'max' : 'cinder'
 }
 
 // ---------- evidence: per-generation log + frame-delta buckets ----------
 
 interface GenLog {
   event: string
+  persona: string
   raw: string
   shown: string | null
   prefillMs: number
@@ -146,6 +164,7 @@ let started = false
 let worker: Worker | null = null
 let inFlight = false
 let inFlightEvent = ''
+let inFlightPersona = 'max'
 let genId = 0
 let pending: Pending | null = null
 let lastLineAt = 0
@@ -306,11 +325,12 @@ function framesHealthy(now: number): boolean {
 
 // ---------- dispatch ----------
 
-function dispatch(event: string): void {
+function dispatch(event: string, persona: string): void {
   inFlight = true
   inFlightEvent = event
+  inFlightPersona = persona
   stats.requested++
-  send({ type: 'generate', id: ++genId, event })
+  send({ type: 'generate', id: ++genId, event, persona })
 }
 
 function maybeDispatch(now: number): void {
@@ -319,7 +339,8 @@ function maybeDispatch(now: number): void {
   // Stress probe: hammer the decoder back-to-back, no gates, no mercy.
   // Exists purely to measure the worst case (?djstress=1).
   if (stress()) {
-    dispatch(STRESS_EVENTS[stressIdx++ % STRESS_EVENTS.length])
+    dispatch(STRESS_EVENTS[stressIdx % STRESS_EVENTS.length], stressIdx % 2 === 0 ? 'max' : 'cinder')
+    stressIdx++
     return
   }
 
@@ -341,8 +362,9 @@ function maybeDispatch(now: number): void {
   if (!framesHealthy(now)) return // banter loses; the TTL will bin it if this persists
 
   const ev = `${pending.text} | HEAT: ${pending.heat}`
+  const persona = pickPersona(pending.heat)
   pending = null
-  dispatch(ev)
+  dispatch(ev, persona)
 }
 
 // ---------- worker messages ----------
@@ -373,6 +395,7 @@ function onWorkerMessage(e: MessageEvent): void {
       if (stats.gens.length < MAX_GEN_LOG)
         stats.gens.push({
           event: inFlightEvent,
+          persona: inFlightPersona,
           raw: m.text,
           shown,
           prefillMs: m.prefillMs,
@@ -385,6 +408,8 @@ function onWorkerMessage(e: MessageEvent): void {
         banterState.line = shown
         banterState.lineNonce++
         banterState.lineShownAt = lastLineAt
+        banterState.speaker = PERSONA_NAMES[inFlightPersona] ?? PERSONA_NAMES.max
+        banterState.speakerId = inFlightPersona
       } else {
         stats.gateRejected++
       }
@@ -435,7 +460,7 @@ declare global {
         counts: Omit<typeof stats, 'gens'>
       }
       /** Force one line through, bypassing every gate - authoring tool. */
-      say: (event: string) => void
+      say: (event: string, persona?: string) => void
       gate: typeof gateLine
     }
   }
@@ -457,12 +482,12 @@ function installDevHook(): void {
         counts,
       }
     },
-    say: (event: string) => {
+    say: (event: string, persona?: string) => {
       if (banterState.status !== 'warm' || inFlight) {
         console.warn(`[banter] not ready to say anything (status ${banterState.status}, inFlight ${inFlight})`)
         return
       }
-      dispatch(event)
+      dispatch(event, persona ?? (Math.random() < 0.5 ? 'max' : 'cinder'))
     },
     gate: gateLine,
   }
