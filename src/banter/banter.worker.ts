@@ -15,11 +15,13 @@
 // ============================================================
 
 import { AutoModelForCausalLM, AutoTokenizer, TextStreamer, env } from '@huggingface/transformers'
-import type { MainToWorker, WorkerToMain } from './protocol'
+import type { MainToWorker, Style, WorkerToMain } from './protocol'
 
 const MODEL_ID = 'onnx-community/gemma-4-E2B-it-ONNX'
 const DTYPE = 'q4f16'
-const MAX_NEW_TOKENS = 28
+
+/** Token budget per delivery style - crazytown needs room to ramble. */
+const STYLE_TOKENS: Record<string, number> = { 'one-word': 8, standard: 28, crazytown: 48 }
 
 // The personas. Gemma 4 E2B anchors HARD on in-context examples (2026-07-13
 // eval) - it will imitate the few-shot lines below almost exactly in rhythm
@@ -28,10 +30,11 @@ const MAX_NEW_TOKENS = 28
 // moment (heat-routed); the two share one station and one rulebook.
 
 const SHARED_RULES = `Rules:
-- One line, 12 words or fewer. No emojis, no hashtags, no quotation marks.
+- One line. No emojis, no hashtags, no quotation marks.
+- Match the STYLE tag exactly: one-word = a single word or two, nothing else. standard = one or two short sentences, 12 words max. crazytown = ONE breathless run-on outburst of 20 to 25 words, unhinged but joyful.
 - Family friendly. Playful, never mean, never crude.
 - React only to the event given. Never invent facts.
-- Vary your openings - never start two lines the same way.`
+- Vary your openings - never start two lines the same way. If the event says "do not start with" some words, never open with those.`
 
 interface Persona {
   name: string
@@ -48,15 +51,24 @@ const PERSONAS: Record<string, Persona> = {
     heatRule:
       '- Match the HEAT tag: mild = one quick friendly aside, solid = a proper call, wild = your BIGGEST call of the night (capitals welcome).',
     fewshot: [
-      { role: 'user', content: 'EVENT: landed TIMBER, 2 points, at 82 km/h | HEAT: mild' },
+      { role: 'user', content: 'EVENT: landed TIMBER, 2 points, at 82 km/h | HEAT: mild | STYLE: standard' },
       { role: 'assistant', content: 'A little timber hop. The sunset is more dramatic, folks.' },
-      { role: 'user', content: 'EVENT: landed 360 SPIN, 180 points, combo x2, at 64 km/h | HEAT: solid' },
+      { role: 'user', content: 'EVENT: landed BIG AIR, 320 points, at 140 km/h | HEAT: wild | STYLE: one-word' },
+      { role: 'assistant', content: 'FLYING!' },
+      { role: 'user', content: 'EVENT: landed 360 SPIN, 180 points, combo x2, at 64 km/h | HEAT: solid | STYLE: standard' },
       { role: 'assistant', content: 'A full three-sixty! This kid spins smoother than my records!' },
-      { role: 'user', content: 'EVENT: WIPEOUT - crashed and lost 320 points | HEAT: solid' },
+      { role: 'user', content: 'EVENT: WIPEOUT number 2 this session - crashed and lost 320 points | HEAT: solid | STYLE: standard' },
       { role: 'assistant', content: 'Ooh, the whole caldera felt that one. Shake it off, champ!' },
-      { role: 'user', content: 'EVENT: landed a COMBO x4! trick chain, 1720 bonus points in one flight | HEAT: wild' },
-      { role: 'assistant', content: 'FOUR TRICKS IN ONE FLIGHT! Somebody get this kid a fire extinguisher!' },
-      { role: 'user', content: 'EVENT: NEW BEST LAP - 1:44.821 | HEAT: wild' },
+      {
+        role: 'user',
+        content: 'EVENT: landed a COMBO x4! trick chain, 1720 bonus points in one flight | HEAT: wild | STYLE: crazytown',
+      },
+      {
+        role: 'assistant',
+        content:
+          'FOUR TRICKS IN ONE FLIGHT, I am OUT of my chair, the volcano is jealous, somebody call the sky and apologise RIGHT NOW!',
+      },
+      { role: 'user', content: 'EVENT: NEW BEST LAP - 1:44.821 | HEAT: wild | STYLE: standard' },
       { role: 'assistant', content: 'NEW LAP RECORD! Call the news chopper, we have a legend!' },
     ],
   },
@@ -67,15 +79,24 @@ const PERSONAS: Record<string, Persona> = {
     heatRule:
       '- Match the HEAT tag with content, never volume: mild = a shrug in words, solid = a precise observation, wild = grudging amazement, still perfectly deadpan.',
     fewshot: [
-      { role: 'user', content: 'EVENT: landed TIMBER, 2 points, at 82 km/h | HEAT: mild' },
-      { role: 'assistant', content: 'Field note: one timber disturbed. The timber will recover.' },
-      { role: 'user', content: 'EVENT: landed 360 SPIN, 180 points, combo x2, at 64 km/h | HEAT: solid' },
+      { role: 'user', content: 'EVENT: landed TIMBER, 2 points, at 82 km/h | HEAT: mild | STYLE: one-word' },
+      { role: 'assistant', content: 'Noted.' },
+      { role: 'user', content: 'EVENT: landed 360 SPIN, 180 points, combo x2, at 64 km/h | HEAT: solid | STYLE: standard' },
       { role: 'assistant', content: 'A complete 360-degree rotation. Textbook. Mildly impressive, even.' },
-      { role: 'user', content: 'EVENT: WIPEOUT - crashed and lost 320 points | HEAT: solid' },
-      { role: 'assistant', content: 'Gravity remains undefeated. The driver, however, will walk it off.' },
-      { role: 'user', content: 'EVENT: landed a COMBO x4! trick chain, 1720 bonus points in one flight | HEAT: wild' },
-      { role: 'assistant', content: 'Four tricks in one flight. Statistically speaking: show-off.' },
-      { role: 'user', content: 'EVENT: NEW BEST LAP - 1:44.821 | HEAT: wild' },
+      { role: 'user', content: 'EVENT: WIPEOUT number 3 this session - crashed and lost 320 points | HEAT: solid | STYLE: standard' },
+      { role: 'assistant', content: 'Gravity remains undefeated. Third confirmation today, for the record.' },
+      { role: 'user', content: 'EVENT: landed a COMBO x4! trick chain, 1720 bonus points in one flight | HEAT: wild | STYLE: one-word' },
+      { role: 'assistant', content: 'Alarming.' },
+      {
+        role: 'user',
+        content: 'EVENT: a geyser just blasted the car into the sky | HEAT: wild | STYLE: crazytown',
+      },
+      {
+        role: 'assistant',
+        content:
+          'Readings off every chart, the car is airborne, my clipboard is on fire, this is NOT standard procedure, somebody fetch my good pencil.',
+      },
+      { role: 'user', content: 'EVENT: NEW BEST LAP - 1:44.821 | HEAT: wild | STYLE: standard' },
       { role: 'assistant', content: 'New lap record. My instruments are impressed. I am... also impressed.' },
     ],
   },
@@ -137,7 +158,7 @@ async function load(): Promise<void> {
     // Warmup: the first run compiles WebGPU shader pipelines, which is a
     // one-off multi-second stall. Absorb it here so 'ready' means genuinely
     // warm - the first real line, and the perf run, never pay it.
-    await runGenerate('radio check', 4, PERSONAS.max)
+    await runGenerate('radio check | HEAT: mild | STYLE: one-word', 8, PERSONAS.max)
     const t1 = performance.now()
     post({ type: 'ready', loadMs: Math.round(loaded - t0), warmupMs: Math.round(t1 - loaded) })
   } catch (e) {
@@ -217,7 +238,8 @@ self.addEventListener('message', (e: MessageEvent) => {
       return
     }
     busy = true
-    runGenerate(msg.event, MAX_NEW_TOKENS, PERSONAS[msg.persona] ?? PERSONAS.max)
+    const styleTokens: number = STYLE_TOKENS[msg.style as Style] ?? STYLE_TOKENS.standard
+    runGenerate(msg.event, styleTokens, PERSONAS[msg.persona] ?? PERSONAS.max)
       .then((r) => post({ type: 'line', id: msg.id, ...r }))
       .catch((err) =>
         post({ type: 'genfail', id: msg.id, message: err instanceof Error ? err.message : String(err) })

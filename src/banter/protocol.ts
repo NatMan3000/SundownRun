@@ -6,9 +6,16 @@
 //  import this file - keep it dependency-free.
 // ============================================================
 
+/**
+ * Delivery shape of a line. The model mirrors whatever rhythm its few-shot
+ * shows, so form must be an explicit routed dimension or every line comes
+ * out as the same two short sentences (Nathan, 2026-07-14).
+ */
+export type Style = 'one-word' | 'standard' | 'crazytown'
+
 export type MainToWorker =
   | { type: 'load' }
-  | { type: 'generate'; id: number; event: string; persona: string }
+  | { type: 'generate'; id: number; event: string; persona: string; style: Style }
 
 export type WorkerToMain =
   | { type: 'progress'; loadedMB: number; totalMB: number; pct: number }

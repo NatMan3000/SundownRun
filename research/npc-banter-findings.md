@@ -96,6 +96,17 @@ Main chunk: zero transformers.js references (verified by grep on the built outpu
 
 Nathan's direction after playing: the commentary should switch between personas, each with its own flavour. Built: CALDERA FM now has **Magma Max** (the hype man) and **Doc Cinder** (a deadpan volcano scientist, cinder-cone canon). The HEAT tier routes the speaker - wild moments go mostly to Max, mild ones mostly to Cinder, with deliberate crossover so an occasional bone-dry line lands on a huge trick. Each persona has its own system prompt and few-shot set (same shared rulebook); the chip names the speaker with a per-host accent colour (Max amber, Cinder a cool `#A9C6BF`). Zero perf cost - every line re-prefills its prompt anyway. First organic Cinder line, reacting to a real 2-point timber tap: "Timber settled. Standard procedure for that sequence."
 
+## Addendum 2 (2026-07-14): delivery styles, airtime dice, opener memory
+
+Three more Nathan-directed tuning rounds, all live-verified:
+
+- **Airtime is now heat-weighted dice** - trick landings roll mild 8% / solid 20% / wild 65% (about one landing in five overall), crashes 25%. **Wipeouts always get a call.** Rare one-offs (best lap, all shards, top speed, greeting) always play.
+- **STYLE tiers** break the two-short-sentences rhythm (the model mirrors whatever shape its few-shot shows, so form became a routed dimension like HEAT): `one-word` ("FLYING!", Cinder's "Indeed."), `standard`, and `crazytown` - a breathless 25-word run-on with its own 48-token budget and a gate salvage chain (sentence end → comma → space + "!") because run-ons routinely hit the token cap unpunctuated. Weighted by heat, never hard-coupled - the mismatches (a crazytown meltdown over a 2-point timber) are the best lines.
+- **Opener anti-repetition** - the director feeds the last 3 shown openers back as "do not start with", which killed the "Whoa!" habit. Wipeout events also carry a session tally ("WIPEOUT number 4 this session") so the hosts feel like they watched the whole show.
+- **Gate false-positive fixed**: "I can't even process the speed!" tripped the refusal filter - refusal phrases now only match at line start.
+
+Parked for later: two-host back-and-forth exchanges (doubles latency and screen time; revisit alongside TTS voice).
+
 ## For the Josh playtest (not machine-verifiable)
 
 - **Is it funny?** 12-year-old laughter is the only meaningful eval. Watch whether he clocks that the DJ is talking about *his* specific trick - that recognition is the wonder moment the spike was for.

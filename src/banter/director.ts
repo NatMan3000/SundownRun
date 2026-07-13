@@ -26,7 +26,7 @@ import { useGameStore } from '../core/store'
 import { RECENT_SIZE, tricksState } from '../core/tricks'
 import { formatLap } from '../ui/format'
 import { gateLine } from './gate'
-import type { MainToWorker, WorkerToMain } from './protocol'
+import type { MainToWorker, Style, WorkerToMain } from './protocol'
 
 // ---------- scheduling constants ----------
 
@@ -94,11 +94,23 @@ function pickPersona(heat: Heat): string {
   return r < 0.55 ? 'max' : 'cinder'
 }
 
+// Delivery shape, weighted by heat but never hard-coupled to it - the
+// mismatches are the best lines (a crazytown meltdown over a 2-point timber,
+// a flat one-worder after a monster combo). Nathan direction, 2026-07-14:
+// sometimes 1 word, sometimes 1-2 short sentences, sometimes crazytown.
+function pickStyle(heat: Heat): Style {
+  const r = Math.random()
+  if (heat === 'wild') return r < 0.12 ? 'one-word' : r < 0.6 ? 'standard' : 'crazytown'
+  if (heat === 'mild') return r < 0.3 ? 'one-word' : r < 0.92 ? 'standard' : 'crazytown'
+  return r < 0.15 ? 'one-word' : r < 0.85 ? 'standard' : 'crazytown'
+}
+
 // ---------- evidence: per-generation log + frame-delta buckets ----------
 
 interface GenLog {
   event: string
   persona: string
+  style: Style
   raw: string
   shown: string | null
   prefillMs: number
@@ -160,11 +172,23 @@ interface Pending {
   at: number
 }
 
+/** Last few openers actually shown - fed back so the hosts stop repeating themselves. */
+const recentOpeners: string[] = []
+
+function noteOpener(line: string): void {
+  const word = line.split(/\s+/)[0]?.replace(/[^A-Za-z']/g, '')
+  if (!word || word.length < 2) return
+  if (recentOpeners.includes(word)) return
+  recentOpeners.push(word)
+  if (recentOpeners.length > 3) recentOpeners.shift()
+}
+
 let started = false
 let worker: Worker | null = null
 let inFlight = false
 let inFlightEvent = ''
 let inFlightPersona = 'max'
+let inFlightStyle: Style = 'standard'
 let genId = 0
 let pending: Pending | null = null
 let lastLineAt = 0
@@ -185,6 +209,7 @@ let prevBestLapMs: number | null = null
 let prevFound = 0
 let impactArmed = true
 let topSpeedCalled = false
+let wipeoutCount = 0
 /** Small tricks (a 2-point timber tap) get at most one dry aside per this window. */
 let lastMildTrickAt = -Infinity
 const MILD_TRICK_GAP_MS = 45000
@@ -229,18 +254,21 @@ function pollTricks(now: number): void {
 
   // A landing emits its whole chain in one physics step - pick ONE moment to
   // talk about, best first: wipeouts and combos beat the tricks inside them.
-  let best: Pending | null = null
+  let best: (Pending & { always?: boolean }) | null = null
   for (let k = from; k < from + fresh; k++) {
     const ev = tricksState.recent[k % RECENT_SIZE]
     if (!ev) continue
     let prio: 1 | 2 | 3
     let heat: Heat
     let text: string
+    let always = false
     if (ev.label === 'WIPEOUT') {
       const lost = Math.max(0, -ev.points)
+      wipeoutCount++
       prio = 3
       heat = lost >= 4000 ? 'wild' : 'solid'
-      text = `WIPEOUT - crashed and lost ${lost} points`
+      text = `WIPEOUT number ${wipeoutCount} this session - crashed and lost ${lost} points`
+      always = true // a wipeout ALWAYS gets a call (Nathan, 2026-07-14)
     } else if (ev.label === 'GEYSER LAUNCH') {
       prio = 3
       heat = 'wild'
@@ -264,9 +292,9 @@ function pollTricks(now: number): void {
       heat = ev.points >= 500 ? 'wild' : 'solid'
       text = `landed ${ev.label}, ${ev.points} points${ev.comboCount > 1 ? `, combo x${ev.comboCount}` : ''}, at ${Math.round(telemetry.speedKmh)} km/h`
     }
-    if (!best || prio >= best.prio) best = { prio, heat, text, at: now }
+    if (!best || prio >= best.prio) best = { prio, heat, text, at: now, always }
   }
-  if (best && Math.random() < TRICK_CHANCE[best.heat]) {
+  if (best && (best.always || Math.random() < TRICK_CHANCE[best.heat])) {
     if (best.heat === 'mild') lastMildTrickAt = now
     offer(best.prio, best.heat, best.text, now)
   }
@@ -336,12 +364,14 @@ function framesHealthy(now: number): boolean {
 
 // ---------- dispatch ----------
 
-function dispatch(event: string, persona: string): void {
+function dispatch(event: string, persona: string, style: Style): void {
   inFlight = true
   inFlightEvent = event
   inFlightPersona = persona
+  inFlightStyle = style
   stats.requested++
-  send({ type: 'generate', id: ++genId, event, persona })
+  const avoid = recentOpeners.length > 0 ? ` | do not start with: ${recentOpeners.join(', ')}` : ''
+  send({ type: 'generate', id: ++genId, event: `${event} | STYLE: ${style}${avoid}`, persona, style })
 }
 
 function maybeDispatch(now: number): void {
@@ -350,7 +380,12 @@ function maybeDispatch(now: number): void {
   // Stress probe: hammer the decoder back-to-back, no gates, no mercy.
   // Exists purely to measure the worst case (?djstress=1).
   if (stress()) {
-    dispatch(STRESS_EVENTS[stressIdx % STRESS_EVENTS.length], stressIdx % 2 === 0 ? 'max' : 'cinder')
+    const styles: Style[] = ['standard', 'one-word', 'crazytown']
+    dispatch(
+      STRESS_EVENTS[stressIdx % STRESS_EVENTS.length],
+      stressIdx % 2 === 0 ? 'max' : 'cinder',
+      styles[stressIdx % styles.length]
+    )
     stressIdx++
     return
   }
@@ -374,8 +409,9 @@ function maybeDispatch(now: number): void {
 
   const ev = `${pending.text} | HEAT: ${pending.heat}`
   const persona = pickPersona(pending.heat)
+  const style = pickStyle(pending.heat)
   pending = null
-  dispatch(ev, persona)
+  dispatch(ev, persona, style)
 }
 
 // ---------- worker messages ----------
@@ -402,11 +438,12 @@ function onWorkerMessage(e: MessageEvent): void {
       inFlight = false
       stats.completed++
       lastLineAt = performance.now()
-      const shown = gateLine(m.text)
+      const shown = gateLine(m.text, inFlightStyle)
       if (stats.gens.length < MAX_GEN_LOG)
         stats.gens.push({
           event: inFlightEvent,
           persona: inFlightPersona,
+          style: inFlightStyle,
           raw: m.text,
           shown,
           prefillMs: m.prefillMs,
@@ -421,6 +458,7 @@ function onWorkerMessage(e: MessageEvent): void {
         banterState.lineShownAt = lastLineAt
         banterState.speaker = PERSONA_NAMES[inFlightPersona] ?? PERSONA_NAMES.max
         banterState.speakerId = inFlightPersona
+        noteOpener(shown)
       } else {
         stats.gateRejected++
       }
@@ -471,7 +509,7 @@ declare global {
         counts: Omit<typeof stats, 'gens'>
       }
       /** Force one line through, bypassing every gate - authoring tool. */
-      say: (event: string, persona?: string) => void
+      say: (event: string, persona?: string, style?: Style) => void
       gate: typeof gateLine
     }
   }
@@ -493,12 +531,12 @@ function installDevHook(): void {
         counts,
       }
     },
-    say: (event: string, persona?: string) => {
+    say: (event: string, persona?: string, style?: Style) => {
       if (banterState.status !== 'warm' || inFlight) {
         console.warn(`[banter] not ready to say anything (status ${banterState.status}, inFlight ${inFlight})`)
         return
       }
-      dispatch(event, persona ?? (Math.random() < 0.5 ? 'max' : 'cinder'))
+      dispatch(event, persona ?? (Math.random() < 0.5 ? 'max' : 'cinder'), style ?? 'standard')
     },
     gate: gateLine,
   }
