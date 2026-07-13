@@ -32,7 +32,7 @@ export const CONFIG = {
   // ---------- FUN ----------
   driftSmoke: true, //    tyre smoke when you drift
   treeSmashKmh: 40, //    hit a tree faster than this and it smashes away (slower = solid crunch)
-  showFps: false, //      true = show the frames-per-second counter
+  showFps: true, //      true = show the frames-per-second counter
 
   // ---------- TRICKS ----------
   tricks: true, //        true = score points for jumps, spins and flips
