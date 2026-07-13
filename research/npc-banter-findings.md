@@ -111,6 +111,12 @@ Parked for later: two-host back-and-forth exchanges (doubles latency and screen 
 
 Supertonic-TTS-2 (`onnx-community/Supertonic-TTS-2-ONNX`, ~262MB fp32, natively supported by transformers.js) runs in the same worker as the LLM, loading after it so text banter is live while the voice tunes in (~30s first download, ~20s from cache). Each host has a voice preset + delivery speed - `CONFIG.djVoiceMax` / `djVoiceCinder`, choosable from M1-M5/F1-F5, so Josh can recast the station. A gated line now holds until its clip is synthesised, then text and voice land together; playback goes through a highpass/lowpass/compressor "FM band" chain in its own AudioContext (sells the radio fiction, flatters TTS artefacts), the game mix ducks to 55% while a host talks, and the cooldown counts from the END of the clip so hosts never talk over themselves. Speech failure or a 15s timeout degrades to text-only; stress runs stay text-only by design. Frame deltas during LLM+TTS work: identical to idle (240 samples, p99 18.6ms vs 18.6ms). Voice quality/casting is a listen-and-judge item for Nathan/Josh - the presets were picked blind.
 
+## Addendum 4 (2026-07-14): voice verdict - built, works, benched
+
+Nathan's listen-test verdict: the spoken lines are off-putting; on-screen text is the experience. `radioVoice` now defaults **false** - the whole TTS layer stays dormant (never downloads, never loads) unless someone flips the knob or passes `?djvoice=1`, and it remains fully working for Josh to try. The evidence stands: voice synthesis was frame-neutral and the architecture (speak-then-show, FM-band chain, duck, end-of-clip cooldown) is sound - the miss was taste, not engineering. Same session, a brevity pass: crazytown trimmed to 15-20 words (36-token budget, 140-char gate, rarer rolls) after "some of them are a bit long".
+
+One real bug from live listening, now fixed: in dev, Vite HMR re-instantiated the director module on every banter-file edit, orphaning the previous worker + AudioContext - which kept broadcasting lines from an older code version with no HUD attached (two voices talking over each other). `import.meta.hot.dispose()` now shuts down the outgoing instance's worker and audio. Note: Vite 8 removed `import.meta.hot.decline` - dispose is the tool.
+
 ## For the Josh playtest (not machine-verifiable)
 
 - **Is it funny?** 12-year-old laughter is the only meaningful eval. Watch whether he clocks that the DJ is talking about *his* specific trick - that recognition is the wonder moment the spike was for.

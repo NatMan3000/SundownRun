@@ -117,9 +117,9 @@ function pickPersona(heat: Heat): string {
 // sometimes 1 word, sometimes 1-2 short sentences, sometimes crazytown.
 function pickStyle(heat: Heat): Style {
   const r = Math.random()
-  if (heat === 'wild') return r < 0.12 ? 'one-word' : r < 0.6 ? 'standard' : 'crazytown'
-  if (heat === 'mild') return r < 0.3 ? 'one-word' : r < 0.92 ? 'standard' : 'crazytown'
-  return r < 0.15 ? 'one-word' : r < 0.85 ? 'standard' : 'crazytown'
+  if (heat === 'wild') return r < 0.12 ? 'one-word' : r < 0.75 ? 'standard' : 'crazytown'
+  if (heat === 'mild') return r < 0.3 ? 'one-word' : r < 0.95 ? 'standard' : 'crazytown'
+  return r < 0.15 ? 'one-word' : r < 0.92 ? 'standard' : 'crazytown'
 }
 
 // ---------- evidence: per-generation log + frame-delta buckets ----------

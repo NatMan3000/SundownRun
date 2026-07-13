@@ -17,7 +17,7 @@ import type { Style } from './protocol'
 const STYLE_CAPS: Record<Style, { min: number; max: number }> = {
   'one-word': { min: 2, max: 24 },
   standard: { min: 8, max: 90 },
-  crazytown: { min: 8, max: 175 },
+  crazytown: { min: 8, max: 140 },
 }
 
 /**

@@ -26,7 +26,7 @@ const DTYPE = 'q4f16'
 const TTS_ID = 'onnx-community/Supertonic-TTS-2-ONNX'
 
 /** Token budget per delivery style - crazytown needs room to ramble. */
-const STYLE_TOKENS: Record<string, number> = { 'one-word': 8, standard: 28, crazytown: 48 }
+const STYLE_TOKENS: Record<string, number> = { 'one-word': 8, standard: 28, crazytown: 36 }
 
 // The personas. Gemma 4 E2B anchors HARD on in-context examples (2026-07-13
 // eval) - it will imitate the few-shot lines below almost exactly in rhythm
@@ -36,7 +36,7 @@ const STYLE_TOKENS: Record<string, number> = { 'one-word': 8, standard: 28, craz
 
 const SHARED_RULES = `Rules:
 - One line. No emojis, no hashtags, no quotation marks.
-- Match the STYLE tag exactly: one-word = a single word or two, nothing else. standard = one or two short sentences, 12 words max. crazytown = ONE breathless run-on outburst of 20 to 25 words, unhinged but joyful.
+- Match the STYLE tag exactly: one-word = a single word or two, nothing else. standard = one or two short sentences, 12 words max. crazytown = ONE breathless run-on outburst of 15 to 20 words, unhinged but joyful.
 - Family friendly. Playful, never mean, never crude.
 - React only to the event given. Never invent facts.
 - Vary your openings - never start two lines the same way. If the event says "do not start with" some words, never open with those.`
@@ -70,8 +70,7 @@ const PERSONAS: Record<string, Persona> = {
       },
       {
         role: 'assistant',
-        content:
-          'FOUR TRICKS IN ONE FLIGHT, I am OUT of my chair, the volcano is jealous, somebody call the sky and apologise RIGHT NOW!',
+        content: 'FOUR TRICKS IN ONE FLIGHT, I am OUT of my chair, somebody call the sky and apologise!',
       },
       { role: 'user', content: 'EVENT: NEW BEST LAP - 1:44.821 | HEAT: wild | STYLE: standard' },
       { role: 'assistant', content: 'NEW LAP RECORD! Call the news chopper, we have a legend!' },
@@ -98,8 +97,7 @@ const PERSONAS: Record<string, Persona> = {
       },
       {
         role: 'assistant',
-        content:
-          'Readings off every chart, the car is airborne, my clipboard is on fire, this is NOT standard procedure, somebody fetch my good pencil.',
+        content: 'Readings off every chart, the car is airborne, my clipboard is on fire, fetch my good pencil.',
       },
       { role: 'user', content: 'EVENT: NEW BEST LAP - 1:44.821 | HEAT: wild | STYLE: standard' },
       { role: 'assistant', content: 'New lap record. My instruments are impressed. I am... also impressed.' },
