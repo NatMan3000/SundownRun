@@ -20,3 +20,4 @@ are not indexed - see `~/.claude/rules/governance/file-index.md`.
 | File | Retention | Description |
 |------|-----------|-------------|
 | `fable-orchestrated-build-prompt.md` | reference | The single prompt that built the whole game via a boss/worker/checker agent team. Cited as the worked template by Kai's Fable operating guide and the AgentTeam skill. |
+| `fable-npc-banter-prompt.md` | reference | Paste-ready Fable prompt for the in-browser WebGPU NPC banter feasibility spike (grounded in the 2026-07-13 Gemma 4 E2B browser eval; results in nexus local_models). |
