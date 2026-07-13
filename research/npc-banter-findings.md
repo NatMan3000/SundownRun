@@ -107,6 +107,10 @@ Three more Nathan-directed tuning rounds, all live-verified:
 
 Parked for later: two-host back-and-forth exchanges (doubles latency and screen time; revisit alongside TTS voice).
 
+## Addendum 3 (2026-07-14): the hosts have voices
+
+Supertonic-TTS-2 (`onnx-community/Supertonic-TTS-2-ONNX`, ~262MB fp32, natively supported by transformers.js) runs in the same worker as the LLM, loading after it so text banter is live while the voice tunes in (~30s first download, ~20s from cache). Each host has a voice preset + delivery speed - `CONFIG.djVoiceMax` / `djVoiceCinder`, choosable from M1-M5/F1-F5, so Josh can recast the station. A gated line now holds until its clip is synthesised, then text and voice land together; playback goes through a highpass/lowpass/compressor "FM band" chain in its own AudioContext (sells the radio fiction, flatters TTS artefacts), the game mix ducks to 55% while a host talks, and the cooldown counts from the END of the clip so hosts never talk over themselves. Speech failure or a 15s timeout degrades to text-only; stress runs stay text-only by design. Frame deltas during LLM+TTS work: identical to idle (240 samples, p99 18.6ms vs 18.6ms). Voice quality/casting is a listen-and-judge item for Nathan/Josh - the presets were picked blind.
+
 ## For the Josh playtest (not machine-verifiable)
 
 - **Is it funny?** 12-year-old laughter is the only meaningful eval. Watch whether he clocks that the DJ is talking about *his* specific trick - that recognition is the wonder moment the spike was for.
