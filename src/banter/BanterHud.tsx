@@ -18,7 +18,7 @@ import { banterEnabled, banterState, startBanter } from './director'
 
 const HOLD_BASE_MS = 3200
 const HOLD_PER_CHAR_MS = 45
-const FADE_MS = 300
+const FADE_MS = 500
 const POLL_MS = 120
 
 const BANTER_CSS = `

@@ -2,10 +2,10 @@
 type: auto
 session_id: 22123dac-d9dd-459c-85d3-56f9623e41eb
 project: SundownRun
-date: 2026-07-13
-topic: NPC banter (CALDERA FM) spike scaffold - in-browser Gemma 4 via WebGPU
-duration: 26 minutes
-events: 82
+date: 2026-07-13..14
+topic: NPC banter (CALDERA FM) spike scaffold + two-host evolution + voice layer (benched)
+duration: 2.5 hours
+events: 297
 ---
 
 # NPC banter (CALDERA FM) spike scaffold - in-browser Gemma 4 via WebGPU
@@ -54,11 +54,36 @@ Kicked off from a single prompt pointing at a pre-written Fable spike brief (`re
 | `src/ui/HUD.tsx` | Mounted `BanterHud` |
 | `src/dev/DemoDrive.tsx`, `src/dev/DevTools.tsx` | Dev toggles/harness for the banter system |
 
+## Continued - 2026-07-14
+
+Same-day continuation, driven by Nathan actually playing with the DJ live. Evolved the single-persona spike into a two-host, style-tiered system, built a full TTS voice layer, then benched it on Nathan's own listen-verdict.
+
+- Split into two heat-routed hosts - **Magma Max** (hype man) and **Doc Cinder** (deadpan scientist) - each with its own few-shot persona and HUD chip accent
+- Added STYLE delivery tiers (one-word / standard / crazytown) with per-style few-shot prompts, token budgets, and gate envelopes for variable-length reactions
+- Tuned airtime to ~1-in-5 heat-weighted trick landings getting a call (wipeouts always call), with a session tally to avoid over-chatter
+- Added opener anti-repetition so consecutive lines don't reuse the same intro
+- Built a full voice layer end-to-end: Supertonic-TTS-2 running in the same worker, per-host voice presets, an FM-band EQ chain, game-mix ducking, and end-of-clip cooldown - measured frame-neutral
+- Nathan's listen verdict: the voices were **off-putting** - on-screen text comments alone read better. `radioVoice` now defaults OFF; the voice layer sits dormant, built but unused, for Josh to try if he wants
+- Fixed a dev-only ghost-DJ bug: Vite HMR was orphaning the worker + audio chain on module swap (`import.meta.hot.dispose` used - Vite 8 has no `decline`)
+- Fixed a content-gate false positive where the refusal filter was anchored to line start
+- Minor HUD polish: `BanterHud.tsx` fade duration 300ms -> 500ms
+
+### New Decisions
+
+| Decision | Rationale |
+|---|---|
+| Voice layer built but shipped OFF by default | Frame-neutral and functionally complete, but Nathan's own listen-through judged it "off-putting" - on-screen text is enough. Left in place (not deleted) for Josh's playtest call. |
+| Two-host heat routing over a single persona | More variety without more chatter - low-heat lines route to Doc Cinder, high-heat/hype moments to Magma Max |
+
+### New Files / Modified (this continuation)
+
+Commits `ac0485d` -> `bd19749` (see `git log`): `src/banter/*` (director, gate, protocol, radioAudio.ts new), `src/audio/AudioEngine.ts`, `src/ui/HUD.tsx`, `src/dev/DemoDrive.tsx`, `src/dev/DevTools.tsx`, `src/core/config.ts`, `research/npc-banter-findings.md` (findings addenda 2-4), plus an uncommitted `BanterHud.tsx` fade-timing tweak swept up by this session.
+
 ## Next Steps
 
-- Frame-cost benchmarking and stress testing (done same-day in a later session - see `research/npc-banter-findings.md`)
-- Two-persona (Magma Max / Doc Cinder) evolution + voice layer (done 2026-07-14, see TIMELINE.md)
-- Josh playtest verdict on whether the DJ is funny, and whether his machine has WebGPU - tracked as open thread "CALDERA FM radio DJ - Josh playtest + adoption decisions"
+- Josh playtest verdict: is the DJ funny; does his machine have WebGPU; may flip `radioVoice` on himself
+- Trick-popup-vs-DJ-line integration decision
+- Constitution amendment if the feature is adopted long-term
 
 ## Related Sessions
 
