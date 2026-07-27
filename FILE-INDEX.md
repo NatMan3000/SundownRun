@@ -21,3 +21,5 @@ are not indexed - see `~/.claude/rules/governance/file-index.md`.
 |------|-----------|-------------|
 | `fable-orchestrated-build-prompt.md` | reference | The single prompt that built the whole game via a boss/worker/checker agent team. Cited as the worked template by Kai's Fable operating guide and the AgentTeam skill. |
 | `fable-npc-banter-prompt.md` | reference | Paste-ready Fable prompt for the in-browser WebGPU NPC banter feasibility spike (grounded in the 2026-07-13 Gemma 4 E2B browser eval; results in nexus local_models). |
+| `gemma-build-variants-and-upgrade-path.md` | reference | Which Gemma 4 E2B build CALDERA FM actually runs (ONNX q4f16, 3.13GB) vs the faster QAT/WGSL build evaluated in the 2026-07-13 Kai session, why they diverged, and the transformers.js QAT test that could cut the download to ~1.97GB. |
+| `qat-build-swap-prompt.md` | reference | Paste-ready prompt for the QAT-build swap experiment - the actionable out of the build-variants doc. |
