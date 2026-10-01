@@ -110,6 +110,7 @@ Everything below was added afterwards, over five more sessions:
 | D12 | AI racers | 3-5 racers, difficulty slider, gentle catch-up, work on any track incl. drawn ones; not in multiplayer | ✅ Yes, racer count selectable 0 to 5 |
 | D13 | Track files | Every track is one JSON file in `tracks/`, documented format; export/import in-game | ✅ Yes |
 | D14 | Settings menu | In-game settings for car, handling, camera, audio, graphics quality; config.ts holds the defaults | ✅ Yes |
+| D15 | Pause the build for constitution sign-off | No pause; the prompt fixes the non-negotiables | ✅ No pause, prompt left as is |
 
 ## Neon theme ideas
 
