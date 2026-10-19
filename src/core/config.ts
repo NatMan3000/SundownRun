@@ -12,12 +12,12 @@ export const CONFIG = {
   carName: 'Sundown GT',
 
   // ---------- HANDLING ----------
-  grip: 1.0, //          0.7 = slippery drift machine, 1.3 = glued to the road
-  steering: 1.0, //      0.7 = calm and easy, 1.3 = twitchy go-kart
-  stability: 1.0, //     how hard the car catches its own slides. 0.7 = loose and drifty, 1.5 = very hard to spin. Raise it if corners keep spinning you out
+  grip: 1.5, //          0.7 = slippery drift machine, 1.3 = glued to the road
+  steering: 1.7, //      0.7 = calm and easy, 1.3 = twitchy go-kart
+  stability: 1.3, //     how hard the car catches its own slides. 0.7 = loose and drifty, 1.5 = very hard to spin. Raise it if corners keep spinning you out
   enginePower: 1.5, //   1.5 = rocket mode, 0.6 = grandma mode
-  topSpeedKmh: 190, //   how fast it can possibly go
-  brakeStrength: 1.0, // bigger = stops harder
+  topSpeedKmh: 1900, //   how fast it can possibly go
+  brakeStrength: 1.9, // bigger = stops harder
 
   // ---------- WORLD ----------
   timeOfDay: 0.5, //     0 = late golden afternoon ... 1 = sun kissing the horizon
@@ -48,17 +48,17 @@ export const CONFIG = {
   multiplayerRam: true, // true = you can SMASH into each other, false = drive through like ghosts
 
   // ---------- RADIO DJ (a real AI lives in your browser!) ----------
-  radioDj: false, //     true = CALDERA FM switches on: Magma Max (the hype man) and Doc Cinder
+  radioDj: true, //     true = CALDERA FM switches on: Magma Max (the hype man) and Doc Cinder
   //                     (a very unimpressed scientist) call out YOUR tricks, crashes and lap
   //                     records - their lines are invented live by a small AI running on your
   //                     graphics card. Nothing leaves your computer. The first switch-on
   //                     downloads the AI brain (about 3GB, one time only, then it is saved).
   //                     If the game ever stutters with them on, just turn it back off.
-  radioVoice: false, //  true = the hosts actually TALK through a car-radio speaker (needs radioDj
+  radioVoice: true, //  true = the hosts actually TALK through a car-radio speaker (needs radioDj
   //                     on; downloads their voice box ~260MB, one time). Off by default - the
   //                     spoken lines divided the judges. Try it and decide for yourself!
   djVoiceMax: 'M2', //    Magma Max's voice - try 'M1' to 'M5' (male) or 'F1' to 'F5' (female)
-  djVoiceCinder: 'M5', // Doc Cinder's voice - mix and match until they sound right!
+  djVoiceCinder: 'F3', // Doc Cinder's voice - mix and match until they sound right!
 } as const
 
 export type GameConfig = typeof CONFIG

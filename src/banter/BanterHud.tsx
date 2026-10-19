@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react'
 import { banterEnabled, banterState, startBanter } from './director'
 
-const HOLD_BASE_MS = 3200
+const HOLD_BASE_MS = 4000
 const HOLD_PER_CHAR_MS = 45
 const FADE_MS = 500
 const POLL_MS = 120

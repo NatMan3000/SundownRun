@@ -15,7 +15,7 @@
 
 import * as gameAudio from '../audio/AudioEngine'
 
-const VOICE_VOL = 1.0
+const VOICE_VOL = 1.5
 
 let ctx: AudioContext | null = null
 let out: GainNode | null = null
