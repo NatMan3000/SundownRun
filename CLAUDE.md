@@ -6,11 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-**Sundown Run** - a golden-hour, open-world 3D driving game built for (and eventually by) Josh. Vite + React 19 + `@react-three/fiber` v9 + `@react-three/rapier` physics, Bun runtime. Built end-to-end - blank repo to unconditional sign-off - in a single orchestrated multi-agent session (2026-07-09).
-
-## Current Phase
-
-**Shipped / DONE.** Both independent checker passes signed off against `CONSTITUTION.md` (checker-1 found and the `drive` worker fixed a first-minute drift-physics blocker; checker-2 verified real GPU-timed 60fps performance + a clean-clone build gate). All build agents shut down. Remaining work is post-ship polish - see `open-threads.md`.
+**Sundown Run** - a golden-hour, open-world 3D driving game built for (and eventually by) Josh. Vite + React 19 + `@react-three/fiber` v9 + `@react-three/rapier` physics, Bun runtime. Shipped; remaining work is post-ship polish (`open-threads.md`).
 
 ## Stack
 
@@ -38,8 +34,8 @@ Multiplayer activation is URL-driven (`?mp=1&name=JOSH&color=red`) because both 
 
 - **`CONSTITUTION.md`** - the binding standard. Art direction ("Golden Hour" - warm low sun, long shadows, atmosphere-everywhere), the 60fps performance budget, and gameplay feel rules. All disputes are settled against this document, never against taste-in-the-moment. Amend deliberately, never drive-by.
 - **`src/core/config.ts`** - Josh's kid-facing knob file. Every tunable (car colour, engine power, grip, camera, time of day) lives here; editing it hot-reloads in the browser. This is the intended entry point for a non-technical collaborator - see the README's "Josh: this bit is for you" section.
-- **`src/net/` + `server/relay.ts` + `server/mp.ts`** - LAN multiplayer (2026-07-12). `bun run mp` starts a Bun WebSocket relay (port 5200, dumb fan-out with sender-id tagging) plus vite `--host`, so a second machine just opens the printed URL - no second clone. Activation is `?mp=1` (+ `&name=` / `&color=` - the URL is the per-machine channel because both machines share the repo's config.ts). Each client simulates only its own car; peers stream 60Hz pose packets (32-byte binary) and render on every other machine as an interpolated (80ms delay, arrival-time-stamped ring buffer) **kinematic rapier body**, so collisions genuinely shove the local dynamic car - each player's car is only ever pushed by physics on their own screen, and the result flows back through their own pose stream. `CONFIG.multiplayerRam` toggles the collider. Lap/trick stats piggyback as 2Hz JSON; the same timer doubles as the keepalive against the relay's 30s idleTimeout. **Synced races** (G / pad X → `raceSignal` in vehicleSignals.ts): everyone teleports to a deterministic grid (sorted relay ids → lateral slots), 3-2-1-GO with throttle locked, first valid lap wins (winner claim broadcast, raceId-guarded). **Crash-prop sync** (`core/propsSignal.ts`): layouts were already round-seeded, so mp flips to a shared round dealt by each race start (local resets stop re-scattering), and local bursts broadcast so both screens pop - remote pops score no points.
-- **`src/banter/`** - CALDERA FM, the in-browser AI radio station (2026-07-14 spike, `CONFIG.radioDj`, default OFF). Two hosts - **Magma Max** (hype man) and **Doc Cinder** (deadpan volcano scientist) - whose lines are generated live by Gemma 4 E2B (ONNX q4f16) via transformers.js on WebGPU in a Web Worker, reacting to real telemetry (tricks ring, store, impact edges). `director.ts` owns scheduling: event priority + HEAT tone tiers (mild/solid/wild), heat-routed persona picking (wild → mostly Max, mild → mostly Cinder, deliberate crossover), cooldowns, and a frame-health EMA gate - when frames and banter collide, banter loses. `gate.ts` screens every line for kid-appropriateness before render. The chip names whoever spoke, and the hosts genuinely TALK: Supertonic-TTS-2 (~262MB, same worker, loads after the LLM) with per-host voice presets (`CONFIG.djVoiceMax`/`djVoiceCinder`, M1-M5/F1-F5), played through an FM-band EQ chain while the game mix ducks (`AudioEngine.duckForRadio`); cooldown runs from clip end so hosts never talk over themselves, and any speech failure degrades to text-only. No WebGPU → feature silently absent. First enable downloads ~3.1GB brain + ~260MB voice (browser-cached; ~3.6s warm loads). Measured: 208 back-to-back generations hold 60fps vsync-locked at 1.14ms avg frame cost; synthesis is frame-neutral too. Findings + open directions: `research/npc-banter-findings.md`.
+- **`src/net/`, `server/relay.ts`, `server/mp.ts`** - LAN multiplayer: `bun run mp` starts a Bun WebSocket relay (port 5200) plus vite `--host`; activation is `?mp=1`. Detail: `docs/architecture-multiplayer-banter.md`.
+- **`src/banter/`** - CALDERA FM, the in-browser AI radio station (`CONFIG.radioDj`, default OFF; Gemma 4 E2B via transformers.js on WebGPU in a Web Worker). Detail: `docs/architecture-multiplayer-banter.md`.
 - **`src/core/` / `src/vehicle/` / `src/world/` / `src/fx/` / `src/audio/` / `src/ui/` / `src/dev/`** - frozen core contracts (config / telemetry / store / terrain API) let multiple agents own separate slices of the repo without merge conflicts. Ownership boundaries used during the build:
   - **world** - terrain, track, trees, boundary/collision
   - **drive** - vehicle physics, steering, camera, laps
@@ -65,10 +61,3 @@ The world is the caldera of an old volcano (Nathan + Josh ruling, 2026-07-12) - 
 - **Two coplanar authored faces z-fight as a whole-face moire** (e.g. a roof-glass surface copied from the roof's own points). Fix with real geometric separation (a few mm drop), never `polygonOffset`.
 - **Never drive a kinematic body through the declarative `<RigidBody>` component** - @react-three/rapier also feeds a kinematic body's target from its own scene-graph transform every frame, which fights your `setNextKinematicTranslation` and leaves the body trailing seconds behind (symptom: physics callback runs at 60Hz with fresh targets but `body.translation()` never matches the previous target). Create the body imperatively (`world.createRigidBody`) and pose the visual as a plain three group - see `src/net/RemoteCars.tsx`.
 
-## Build process notes
-
-Built via Kai-as-orchestrator + 4 long-lived Opus worker agents (world / drive / look / avui) + 2 independent fresh-context checker agents, coordinated through the Nexus cluster kanban (project 45, "Sundown Run"). Checker verdicts and working traces are in `scratchpad/checks/` (gitignored - working evidence, not durable project record). The prompt that drove the whole build is preserved at `research/fable-orchestrated-build-prompt.md`.
-
-## Next Actions
-
-See `open-threads.md`.
