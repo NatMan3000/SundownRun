@@ -33,3 +33,9 @@ are not indexed - see `~/.claude/rules/governance/file-index.md`.
 |------|-----------|-------------|
 | `learn-to-code.ts` | permanent | Generates "Learn To Code.html" - a ten-chapter interactive coding workshop for Josh anchored in Sundown Run's real code |
 | `world-map.ts` | permanent | Generates "World Map.html" - interactive top-down map of the whole world, built from the real terrain/road/jump code |
+
+## docs/
+
+| File | Retention | Description |
+|------|-----------|-------------|
+| `docs/architecture-multiplayer-banter.md` | reference | LAN multiplayer relay and the CALDERA FM AI radio station write-ups (moved from CLAUDE.md 2026-11-15) |
